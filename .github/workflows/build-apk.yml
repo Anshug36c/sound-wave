@@ -28,9 +28,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install required Android packages
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-37" "ndk;27.0.12077973"
+        run: sdkmanager "platforms;android-37.0" "ndk;27.0.12077973"
 
       - name: Build APK
         run: |
