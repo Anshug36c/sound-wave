@@ -1,10 +1,15 @@
 /** vivimusic Project (C) 2026 Licensed under GPL-3.0 | See git history for contributors */
 package echo.music.iad1tya.ui.player
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -38,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +52,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import echo.music.iad1tya.LocalListenTogetherManager
 import echo.music.iad1tya.LocalPlayerConnection
 import echo.music.iad1tya.R
@@ -76,6 +84,11 @@ fun FloatingMiniPlayer(
   val playerConnection = LocalPlayerConnection.current ?: return
   val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
   val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
+  val context = LocalContext.current
+  val thumbnailUrl = mediaMetadata?.thumbnailUrl
+  val thumbnailRequest = remember(context, thumbnailUrl) {
+    ImageRequest.Builder(context).data(thumbnailUrl).crossfade(true).build()
+  }
 
   val swipeSensitivity by rememberPreference(SwipeSensitivityKey, 0.73f)
   val swipeThumbnailPref by rememberPreference(SwipeThumbnailKey, true)
@@ -200,7 +213,7 @@ fun FloatingMiniPlayer(
           ),
     ) {
       AsyncImage(
-        model = mediaMetadata?.thumbnailUrl,
+        model = thumbnailRequest,
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier.size(artSize).clip(RoundedCornerShape(artCornerRadius)),
@@ -209,30 +222,47 @@ fun FloatingMiniPlayer(
       Spacer(Modifier.width(if (isInline) 8.dp else 12.dp))
 
       if (isInline) {
-        Text(
-          text = mediaMetadata?.title.orEmpty(),
-          style = MaterialTheme.typography.bodySmall,
-          color = contentColor,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
+        AnimatedContent(
+          targetState = mediaMetadata,
           modifier = Modifier.weight(1f),
-        )
-      } else {
-        Column(modifier = Modifier.weight(1f)) {
+          transitionSpec = {
+            fadeIn(tween(durationMillis = 180)) togetherWith fadeOut(tween(durationMillis = 120))
+          },
+          label = "floatingMiniPlayerInlineMetadata",
+        ) { metadata ->
           Text(
-            text = mediaMetadata?.title.orEmpty(),
-            style = MaterialTheme.typography.bodyMedium,
+            text = metadata?.title.orEmpty(),
+            style = MaterialTheme.typography.bodySmall,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
-          Text(
-            text = mediaMetadata?.artists?.joinToString { it.name }.orEmpty(),
-            style = MaterialTheme.typography.bodySmall,
-            color = contentColor.copy(alpha = 0.7f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+        }
+      } else {
+        AnimatedContent(
+          targetState = mediaMetadata,
+          modifier = Modifier.weight(1f),
+          transitionSpec = {
+            fadeIn(tween(durationMillis = 180)) togetherWith fadeOut(tween(durationMillis = 120))
+          },
+          label = "floatingMiniPlayerMetadata",
+        ) { metadata ->
+          Column {
+            Text(
+              text = metadata?.title.orEmpty(),
+              style = MaterialTheme.typography.bodyMedium,
+              color = contentColor,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = metadata?.artists?.joinToString { it.name }.orEmpty(),
+              style = MaterialTheme.typography.bodySmall,
+              color = contentColor.copy(alpha = 0.7f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
         }
       }
 
@@ -240,11 +270,19 @@ fun FloatingMiniPlayer(
         onClick = { playerConnection.player.togglePlayPause() },
         modifier = Modifier.size(controlSize),
       ) {
-        Icon(
-          painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
-          contentDescription = null,
-          tint = contentColor,
-        )
+        AnimatedContent(
+          targetState = isPlaying,
+          transitionSpec = {
+            fadeIn(tween(durationMillis = 120)) togetherWith fadeOut(tween(durationMillis = 100))
+          },
+          label = "floatingMiniPlayerPlaybackIcon",
+        ) { playing ->
+          Icon(
+            painter = painterResource(if (playing) R.drawable.pause else R.drawable.play),
+            contentDescription = null,
+            tint = contentColor,
+          )
+        }
       }
 
       if (!isInline) {

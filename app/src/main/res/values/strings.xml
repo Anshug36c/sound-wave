@@ -21,6 +21,7 @@
     </plurals>
 
     <!-- Home -->
+    <string name="listen_now">Listen Now</string>
     <string name="history">History</string>
     <string name="stats">Stats</string>
     <string name="mood_and_genres">Mood and Genres</string>

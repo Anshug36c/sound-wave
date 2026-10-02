@@ -2,7 +2,9 @@ package echo.music.iad1tya.ui.player
 
 import android.content.res.Configuration
 import android.os.Build
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -14,6 +16,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -98,6 +105,7 @@ import coil3.compose.AsyncImage
 import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
+import coil3.request.crossfade
 import coil3.toBitmap
 import echo.music.iad1tya.LocalDatabase
 import echo.music.iad1tya.LocalListenTogetherManager
@@ -185,7 +193,7 @@ fun MiniPlayer(
 ) {
   val useNewMiniPlayerDesign by rememberPreference(UseNewMiniPlayerDesignKey, true)
 
-  val (useFloatingNavBar) = rememberPreference(UseFloatingNavBarKey, defaultValue = false)
+  val (useFloatingNavBar) = rememberPreference(UseFloatingNavBarKey, defaultValue = true)
   val progressState = remember { ProgressState(positionState, durationState) }
 
   if (useFloatingNavBar) {
@@ -517,6 +525,11 @@ private fun NewMiniPlayerThumbnail(
 ) {
   val trackColor = outlineColor.copy(alpha = 0.2f)
   val strokeWidth = 3.dp
+  val context = LocalContext.current
+  val thumbnailUrl = mediaMetadata?.thumbnailUrl
+  val thumbnailRequest = remember(context, thumbnailUrl) {
+    ImageRequest.Builder(context).data(thumbnailUrl).crossfade(true).build()
+  }
 
   Box(
     contentAlignment = Alignment.Center,
@@ -561,7 +574,7 @@ private fun NewMiniPlayerThumbnail(
     ) {
       mediaMetadata?.let { metadata ->
         AsyncImage(
-          model = ImageRequest.Builder(LocalContext.current).data(metadata.thumbnailUrl).build(),
+          model = thumbnailRequest,
           contentDescription = null,
           contentScale = ContentScale.Crop,
           modifier = Modifier.fillMaxSize().clip(CircleShape)
@@ -581,44 +594,60 @@ private fun NewMiniPlayerSongInfo(
   val error by
     LocalPlayerConnection.current?.error?.collectAsState() ?: remember { mutableStateOf(null) }
 
-  Column(modifier = modifier, verticalArrangement = Arrangement.Center) {
-    mediaMetadata?.let { metadata ->
-      Text(
-        text = metadata.title,
-        color = onSurfaceColor,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Medium,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier =
-          Modifier.basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp),
-      )
-      Row(
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        if (metadata.explicit) MIcon.Explicit()
-        if (metadata.artists.any { it.name.isNotBlank() }) {
+  Column(
+    modifier = modifier.animateContentSize(),
+    verticalArrangement = Arrangement.Center,
+  ) {
+    AnimatedContent(
+      targetState = mediaMetadata,
+      transitionSpec = {
+        (fadeIn(tween(durationMillis = 180)) +
+          slideInVertically(tween(durationMillis = 220)) { it / 5 }) togetherWith
+          (fadeOut(tween(durationMillis = 120)) +
+            slideOutVertically(tween(durationMillis = 180)) { -it / 5 })
+      },
+      label = "miniPlayerMetadata",
+    ) { metadata ->
+      Column {
+        metadata?.let {
           Text(
-            text = metadata.artists.joinToString { it.name },
-            color = onSurfaceColor.copy(alpha = 0.7f),
-            fontSize = 12.sp,
+            text = it.title,
+            color = onSurfaceColor,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier =
               Modifier.basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp),
           )
-        }
-      }
+          Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            if (it.explicit) MIcon.Explicit()
+            if (it.artists.any { artist -> artist.name.isNotBlank() }) {
+              Text(
+                text = it.artists.joinToString { artist -> artist.name },
+                color = onSurfaceColor.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier =
+                  Modifier.basicMarquee(iterations = 1, initialDelayMillis = 3000, velocity = 30.dp),
+              )
+            }
+          }
 
-      AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
-        Text(
-          text = stringResource(R.string.error_playing),
-          color = errorColor,
-          fontSize = 10.sp,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
+          AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
+            Text(
+              text = stringResource(R.string.error_playing),
+              color = errorColor,
+              fontSize = 10.sp,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
       }
     }
   }
@@ -1301,20 +1330,30 @@ private fun MiniPlayerControls(
             .background(primaryColor)
       )
 
-      Icon(
-        painter =
-          painterResource(
-            when {
-              isListenTogetherGuest -> if (isMuted) R.drawable.volume_off else R.drawable.volume_up
-              playbackState == Player.STATE_ENDED -> R.drawable.replay
-              effectiveIsPlaying -> R.drawable.pause
-              else -> R.drawable.play
-            }
-          ),
-        contentDescription = null,
-        tint = onPrimaryColor,
-        modifier = Modifier.size(24.dp)
-      )
+      val playbackIconRes =
+        when {
+          isListenTogetherGuest -> if (isMuted) R.drawable.volume_off else R.drawable.volume_up
+          playbackState == Player.STATE_ENDED -> R.drawable.replay
+          effectiveIsPlaying -> R.drawable.pause
+          else -> R.drawable.play
+        }
+      AnimatedContent(
+        targetState = playbackIconRes,
+        transitionSpec = {
+          (fadeIn(tween(durationMillis = 120)) +
+            scaleIn(initialScale = 0.82f, animationSpec = tween(durationMillis = 180))) togetherWith
+            (fadeOut(tween(durationMillis = 100)) +
+              scaleOut(targetScale = 0.82f, animationSpec = tween(durationMillis = 160)))
+        },
+        label = "miniPlayerPlaybackIcon",
+      ) { iconRes ->
+        Icon(
+          painter = painterResource(iconRes),
+          contentDescription = null,
+          tint = onPrimaryColor,
+          modifier = Modifier.size(24.dp)
+        )
+      }
     }
 
     Spacer(modifier = Modifier.width(12.dp))

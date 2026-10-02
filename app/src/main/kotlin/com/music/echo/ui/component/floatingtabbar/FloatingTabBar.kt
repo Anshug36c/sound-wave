@@ -32,8 +32,11 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Indication
 import androidx.compose.foundation.LocalIndication
@@ -206,7 +209,18 @@ fun FloatingTabBar(
   SharedTransitionLayout(modifier = modifier) {
     AnimatedContent(
       targetState = scrollConnection.isInline,
-      transitionSpec = { fadeIn() togetherWith fadeOut() },
+      transitionSpec = {
+        (fadeIn(tween(durationMillis = 220, easing = FastOutSlowInEasing)) +
+          scaleIn(
+            initialScale = 0.97f,
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+          )) togetherWith
+          (fadeOut(tween(durationMillis = 140, easing = FastOutSlowInEasing)) +
+            scaleOut(
+              targetScale = 0.98f,
+              animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            ))
+      },
       contentAlignment = Alignment.BottomCenter
     ) { isInline ->
       if (isInline) {

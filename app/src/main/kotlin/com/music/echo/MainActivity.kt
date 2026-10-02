@@ -686,7 +686,7 @@ class MainActivity : ComponentActivity() {
             label = "navBarHeight",
           )
 
-        val (useFloatingNavBar) = rememberPreference(UseFloatingNavBarKey, defaultValue = false)
+        val (useFloatingNavBar) = rememberPreference(UseFloatingNavBarKey, defaultValue = true)
         val floatingNavBarScrollConnection = rememberFloatingTabBarScrollConnection()
 
         val playerBottomSheetState =
@@ -897,7 +897,7 @@ class MainActivity : ComponentActivity() {
 
         val currentTitle =
           when (navBackStackEntry?.destination?.route) {
-            Screens.Home.route -> "Soundwave"
+            Screens.Home.route -> stringResource(R.string.listen_now)
             Screens.Search.route -> stringResource(R.string.search)
             Screens.Library.route -> stringResource(R.string.filter_library)
             Screens.ListenTogether.route -> stringResource(R.string.together)
@@ -987,7 +987,8 @@ class MainActivity : ComponentActivity() {
                         style =
                           MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 24.sp
+                            fontSize = if (currentRoute == Screens.Home.route) 29.sp else 24.sp,
+                            letterSpacing = if (currentRoute == Screens.Home.route) (-0.5).sp else 0.sp,
                           ),
                       )
                     },

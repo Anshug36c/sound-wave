@@ -1,6 +1,5 @@
 package echo.music.iad1tya.ui.screens
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -68,7 +67,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +81,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -112,7 +111,6 @@ import echo.music.iad1tya.constants.InnerTubeCookieKey
 import echo.music.iad1tya.constants.ListItemHeight
 import echo.music.iad1tya.constants.ListThumbnailSize
 import echo.music.iad1tya.constants.RandomizeHomeOrderKey
-import echo.music.iad1tya.constants.ShowSpeedDialKey
 import echo.music.iad1tya.constants.SmallGridThumbnailHeight
 import echo.music.iad1tya.constants.ThumbnailCornerRadius
 import echo.music.iad1tya.db.entities.Album
@@ -128,7 +126,6 @@ import echo.music.iad1tya.playback.queues.ListQueue
 import echo.music.iad1tya.playback.queues.YouTubeQueue
 import echo.music.iad1tya.ui.component.AlbumGridItem
 import echo.music.iad1tya.ui.component.ArtistGridItem
-import echo.music.iad1tya.ui.component.ChipsRow
 import echo.music.iad1tya.ui.component.LocalBottomSheetPageState
 import echo.music.iad1tya.ui.component.LocalMenuState
 import echo.music.iad1tya.ui.component.NavigationTitle
@@ -579,10 +576,8 @@ fun HomeScreen(
   val allLocalItems by viewModel.allLocalItems.collectAsState()
   val allYtItems by viewModel.allYtItems.collectAsState()
   val speedDialItems by viewModel.speedDialItems.collectAsState()
-  val selectedChip by viewModel.selectedChip.collectAsState()
 
   val isLoading: Boolean by viewModel.isLoading.collectAsState()
-  val isMoodAndGenresLoading = isLoading && explorePage?.moodAndGenres == null
   val isRefreshing by viewModel.isRefreshing.collectAsState()
   val isRandomizing by viewModel.isRandomizing.collectAsState()
   val pullRefreshState = rememberPullToRefreshState()
@@ -594,7 +589,6 @@ fun HomeScreen(
   val accountImageUrl by viewModel.accountImageUrl.collectAsState()
   val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
   val (randomizeHomeOrder) = rememberPreference(RandomizeHomeOrderKey, true)
-  val (showSpeedDial) = rememberPreference(ShowSpeedDialKey, true)
 
   val isLoggedIn = remember(innerTubeCookie) { "SAPISID" in parseCookieString(innerTubeCookie) }
   val url = if (isLoggedIn) accountImageUrl else null
@@ -628,21 +622,7 @@ fun HomeScreen(
     }
   }
 
-  LaunchedEffect(Unit) {
-    snapshotFlow { lazylistState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
-      .collect { lastVisibleIndex ->
-        val len = lazylistState.layoutInfo.totalItemsCount
-        if (lastVisibleIndex != null && lastVisibleIndex >= len - 3) {
-          viewModel.loadMoreYouTubeItems(homePage?.continuation)
-        }
-      }
-  }
-
   NetworkReload(onReload = viewModel::refresh)
-
-  if (selectedChip != null) {
-    BackHandler { viewModel.toggleChip(selectedChip) }
-  }
 
   val localGridItem: @Composable (LocalItem) -> Unit = {
     when (it) {
@@ -778,87 +758,62 @@ fun HomeScreen(
     )
   }
 
+  // Keep the home feed strictly personal: recommendations, listening history, and familiar music.
+  // The generic YouTube home feed (trending, moods, featured playlists), community lists, and
+  // manually curated shortcuts are intentionally not rendered here.
   val homeSections =
     remember(
       randomizeHomeOrder,
       randomSeed,
-      speedDialItems,
       quickPicks,
       dailyDiscover,
       keepListening,
-      accountPlaylists,
       forgottenFavorites,
-      communityPlaylists,
       similarRecommendations,
-      homePage?.sections,
-      explorePage?.moodAndGenres,
     ) {
       val list = mutableListOf<HomeSection>()
 
-      if (showSpeedDial && speedDialItems.isNotEmpty()) list.add(HomeSection.SpeedDial)
       if (quickPicks?.isNotEmpty() == true) list.add(HomeSection.QuickPicks)
-      if (communityPlaylists?.isNotEmpty() == true) list.add(HomeSection.FromTheCommunity)
       if (dailyDiscover?.isNotEmpty() == true) list.add(HomeSection.DailyDiscover)
       if (keepListening?.isNotEmpty() == true) list.add(HomeSection.KeepListening)
-      if (accountPlaylists?.isNotEmpty() == true) list.add(HomeSection.AccountPlaylists)
       if (forgottenFavorites?.isNotEmpty() == true) list.add(HomeSection.ForgottenFavorites)
 
       similarRecommendations?.indices?.forEach { i ->
         list.add(HomeSection.SimilarRecommendation(i))
       }
 
-      homePage?.sections?.indices?.forEach { i -> list.add(HomeSection.HomePageSection(i)) }
-
-      if (explorePage?.moodAndGenres != null) list.add(HomeSection.MoodAndGenres)
-
       if (randomizeHomeOrder) {
         list.sortedByDescending { section ->
           val sectionRandom = Random(randomSeed + section.id.hashCode())
-
           val base =
             when (section) {
               HomeSection.QuickPicks -> 10000
-              is HomeSection.HomePageSection -> 9000 - (section.index * 10)
-              HomeSection.SpeedDial,
               HomeSection.DailyDiscover -> 500
               HomeSection.KeepListening,
-              HomeSection.AccountPlaylists,
-              HomeSection.ForgottenFavorites,
-              HomeSection.FromTheCommunity -> 300
-              else -> 100
+              HomeSection.ForgottenFavorites -> 300
+              is HomeSection.SimilarRecommendation -> 100
+              else -> 0
             }
-
           val modifier =
             when (section) {
               HomeSection.QuickPicks -> 0
-              HomeSection.SpeedDial,
-              HomeSection.DailyDiscover -> sectionRandom.nextInt(-200, 400)
+              HomeSection.DailyDiscover,
               HomeSection.KeepListening,
-              HomeSection.AccountPlaylists,
-              HomeSection.ForgottenFavorites,
-              HomeSection.FromTheCommunity -> sectionRandom.nextInt(-100, 400)
-              else -> sectionRandom.nextInt(-50, 50)
+              HomeSection.ForgottenFavorites -> sectionRandom.nextInt(-100, 200)
+              is HomeSection.SimilarRecommendation -> sectionRandom.nextInt(-50, 50)
+              else -> 0
             }
           base + modifier
         }
       } else {
-        val defaultOrder =
-          mapOf(
-            HomeSection.QuickPicks to 1000,
-            HomeSection.SpeedDial to 100,
-            HomeSection.FromTheCommunity to 80,
-            HomeSection.DailyDiscover to 70,
-            HomeSection.KeepListening to 60,
-            HomeSection.AccountPlaylists to 50,
-            HomeSection.ForgottenFavorites to 40,
-            HomeSection.MoodAndGenres to 10
-          )
-
         list.sortedByDescending { section ->
           when (section) {
-            is HomeSection.HomePageSection -> 900 - section.index
+            HomeSection.QuickPicks -> 1000
+            HomeSection.DailyDiscover -> 80
+            HomeSection.KeepListening -> 60
+            HomeSection.ForgottenFavorites -> 40
             is HomeSection.SimilarRecommendation -> 30 - section.index
-            else -> defaultOrder[section] ?: 0
+            else -> 0
           }
         }
       }
@@ -908,41 +863,6 @@ fun HomeScreen(
         state = lazylistState,
         contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
       ) {
-        item {
-          ChipsRow(
-            chips =
-              homePage
-                ?.chips
-                ?.filter {
-                  !it.title.equals("Podcasts", ignoreCase = true) &&
-                    !it.title.equals("Uploaded", ignoreCase = true)
-                }
-                ?.map { it to it.title } ?: emptyList(),
-            currentValue = selectedChip,
-            onValueUpdate = { viewModel.toggleChip(it) }
-          )
-        }
-
-        if (isLoading && homePage?.chips.isNullOrEmpty()) {
-          item(key = "chips_shimmer") {
-            ShimmerHost {
-              Row(
-                modifier =
-                  Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-              ) {
-                repeat(5) {
-                  TextPlaceholder(
-                    height = 30.dp,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.width(72.dp)
-                  )
-                }
-              }
-            }
-          }
-        }
 
         homeSections.forEach { section ->
           when (section) {
@@ -1769,12 +1689,13 @@ fun HomeScreen(
           }
         }
 
-        if (
-          isLoading || homePage?.continuation != null && homePage?.sections?.isNotEmpty() == true
-        ) {
-          item(key = "loading_shimmer") {
+        if (isLoading && homeSections.isEmpty()) {
+          item(key = "recommendation_loading") {
             ShimmerHost(modifier = Modifier.animateItem()) {
-              // 1. Quick Picks Skeleton
+              TextPlaceholder(
+                height = 30.dp,
+                modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp).width(180.dp),
+              )
               Row(
                 modifier =
                   Modifier.horizontalScroll(rememberScrollState())
@@ -1793,26 +1714,9 @@ fun HomeScreen(
                   )
                 }
               }
-
-              // 2. Speed Dial Skeleton
               TextPlaceholder(
-                height = 36.dp,
-                modifier = Modifier.padding(12.dp).width(200.dp),
-              )
-              Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                repeat(2) {
-                  Row(modifier = Modifier.fillMaxWidth()) {
-                    repeat(3) {
-                      GridItemPlaceHolder(modifier = Modifier.weight(1f), fillMaxWidth = true)
-                    }
-                  }
-                }
-              }
-
-              // 3. Generic Row Skeleton
-              TextPlaceholder(
-                height = 36.dp,
-                modifier = Modifier.padding(12.dp).width(250.dp),
+                height = 30.dp,
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp).width(220.dp),
               )
               Row(
                 modifier =
@@ -1821,9 +1725,21 @@ fun HomeScreen(
                       WindowInsets.systemBars.only(WindowInsetsSides.Horizontal).asPaddingValues()
                     )
               ) {
-                repeat(4) { GridItemPlaceHolder() }
+                repeat(3) { GridItemPlaceHolder() }
               }
             }
+          }
+        }
+
+        if (!isLoading && homeSections.isEmpty()) {
+          item(key = "recommendation_empty") {
+            Text(
+              text = stringResource(R.string.quick_picks_empty),
+              style = MaterialTheme.typography.bodyLarge,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              textAlign = TextAlign.Center,
+              modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 64.dp),
+            )
           }
         }
 

@@ -1,6 +1,6 @@
+/** Soundwave Project (C) 2026 Licensed under GPL-3.0 */
 package echo.music.iad1tya.ui.component
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,7 +47,7 @@ fun NavigationTitle(
         .fillMaxWidth()
         .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal))
         .clickable(enabled = onClick != null) { onClick?.invoke() }
-        .padding(horizontal = 12.dp, vertical = 12.dp)
+        .padding(horizontal = 16.dp, vertical = 10.dp)
   ) {
     thumbnail?.invoke()
 
@@ -55,34 +55,36 @@ fun NavigationTitle(
       label?.let { label ->
         Text(
           text = label,
-          style = MaterialTheme.typography.labelLarge,
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
           overflow = TextOverflow.Ellipsis,
+          maxLines = 1,
         )
       }
 
       Text(
-        text = title.uppercase(),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
         overflow = TextOverflow.Ellipsis,
         maxLines = 1,
       )
     }
 
     onPlayAllClick?.let { playAllClick ->
-      OutlinedButton(
+      Button(
         onClick = playAllClick,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)),
+        shape = CircleShape,
         colors =
-          ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+          ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
           ),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-        modifier = Modifier.height(24.dp)
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+        modifier = Modifier.height(36.dp)
       ) {
-        Text(text = stringResource(R.string.play_all), style = MaterialTheme.typography.labelSmall)
+        Text(text = stringResource(R.string.play_all), style = MaterialTheme.typography.labelMedium)
       }
     }
 

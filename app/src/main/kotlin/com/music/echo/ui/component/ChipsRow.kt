@@ -72,26 +72,16 @@ fun <E> ChipsRow(
     chips.forEach { (value, label) ->
       val isSelected = currentValue == value
 
-      val cornerRadius by
-        animateDpAsState(
-          targetValue = 12.dp,
-          animationSpec =
-            spring(
-              dampingRatio = Spring.DampingRatioMediumBouncy,
-              stiffness = Spring.StiffnessMedium
-            ),
-          label = "corner_radius"
-        )
-
       FilterChip(
         label = { Text(label) },
         selected = isSelected,
         colors =
           FilterChipDefaults.filterChipColors(
             containerColor = containerColor,
-            selectedContainerColor = MaterialTheme.colorScheme.onSurface,
-            selectedLabelColor = MaterialTheme.colorScheme.surface,
-            selectedLeadingIconColor = MaterialTheme.colorScheme.surface
+            labelColor = MaterialTheme.colorScheme.onSurface,
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
           ),
         onClick = { onValueUpdate(value) },
         leadingIcon =
@@ -106,14 +96,14 @@ fun <E> ChipsRow(
           } else {
             null
           },
-        shape = RoundedCornerShape(cornerRadius),
+        shape = RoundedCornerShape(percent = 50),
         border = null,
         modifier =
           Modifier.animateContentSize(
             animationSpec =
               spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow
               )
           )
       )
