@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="explore">Explore</string>
+    <string name="recommended_for_you">Recommended for you</string>
+    <string name="more_like">More like</string>
     <string name="tab_explore">Explore</string>
     <string name="tab_Suggestions">Suggestions</string>
     <string name="tab_album">Album</string>

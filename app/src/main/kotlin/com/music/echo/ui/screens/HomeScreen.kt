@@ -1062,7 +1062,12 @@ fun HomeScreen(
               quickPicks
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { quickPicks ->
-
+                  item(key = "recommended_for_you_title") {
+                    NavigationTitle(
+                      title = stringResource(R.string.recommended_for_you),
+                      modifier = Modifier.animateItem(),
+                    )
+                  }
 
                   item(key = "quick_picks_list") {
                     val distinctQuickPicks = quickPicks.distinctBy { it.id }
@@ -1070,18 +1075,6 @@ fun HomeScreen(
                     val heroWidth = configuration.screenWidthDp.dp - 32.dp
                     
                     val carouselState = rememberCarouselState { distinctQuickPicks.size }
-                    var autoScrollIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-                    
-                    LaunchedEffect(carouselState) {
-                        while (true) {
-                            kotlinx.coroutines.delay(5000)
-                            if (distinctQuickPicks.isNotEmpty() && !carouselState.isScrollInProgress) {
-                                autoScrollIndex = (autoScrollIndex + 1) % distinctQuickPicks.size
-                                carouselState.animateScrollToItem(autoScrollIndex)
-                            }
-                        }
-                    }
-
                     HorizontalCenteredHeroCarousel(
                       state = carouselState,
                       maxItemWidth = heroWidth,
@@ -1478,7 +1471,7 @@ fun HomeScreen(
               recommendation?.let {
                 item(key = "similar_to_title_${section.index}") {
                   NavigationTitle(
-                    label = stringResource(R.string.similar_to),
+                    label = stringResource(R.string.more_like),
                     title = recommendation.title.title,
                     thumbnail =
                       recommendation.title.thumbnailUrl?.let { thumbnailUrl ->
