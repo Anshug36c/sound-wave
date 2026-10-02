@@ -1,0 +1,12 @@
+Soundwave is a local-first Android music player. You can browse without connecting an account; optional third-party sign-ins and sync features can be enabled in Settings.
+
+Features:
+* Search and play music from supported providers.
+* Background playback with lock-screen and media controls.
+* Synchronized lyrics with multiple display styles.
+* Local playlists, queue management, favorites, and library tools.
+* Offline downloads for supported content.
+* Music recognition, equalizer, and audio-output controls.
+* Listening history stored on-device. Android automatic backup and device transfer exclude the history database.
+
+Cloud AI prompt features and AI lyric translation are not included. Third-party services have their own terms and privacy policies.

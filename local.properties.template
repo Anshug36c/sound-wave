@@ -1,0 +1,10 @@
+## Copy to local.properties and set the Android SDK path. Do not commit local.properties.
+# sdk.dir=/path/to/Android/Sdk
+sdk.dir=YOUR_ANDROID_SDK_PATH
+
+# Optional provider credentials. Omit these to leave the integrations unconfigured.
+LASTFM_API_KEY=
+LASTFM_SECRET=
+DISCORD_APPLICATION_ID=
+# Optional override; defaults to discord-${DISCORD_APPLICATION_ID} when the ID is set.
+DISCORD_REDIRECT_SCHEME=

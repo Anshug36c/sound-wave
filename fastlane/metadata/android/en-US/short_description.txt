@@ -1,0 +1,1 @@
+Music player with synced lyrics, offline listening, recognition, and optional sign-in.
