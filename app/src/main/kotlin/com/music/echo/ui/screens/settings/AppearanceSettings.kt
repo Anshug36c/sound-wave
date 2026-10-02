@@ -934,7 +934,7 @@ PlayerBackgroundStyle.LIQUID_GLASS -> stringResource(R.string.player_background_
                   val fontLabel = when (AppFont.fromValue(selectedFontValue)) {
                       AppFont.SYSTEM -> stringResource(echo.music.iad1tya.R.string.font_system)
                       AppFont.GOOGLE_SANS -> stringResource(echo.music.iad1tya.R.string.font_google_sans)
-                      AppFont.SANS_FLEX -> stringResource(echo.music.iad1tya.R.string.font_sans_flex)
+                      AppFont.ROBOTO_FLEX -> stringResource(echo.music.iad1tya.R.string.font_sans_flex)
                       AppFont.OUTFIT -> stringResource(echo.music.iad1tya.R.string.font_outfit)
                       AppFont.PLUS_JAKARTA_SANS -> stringResource(echo.music.iad1tya.R.string.font_plus_jakarta_sans)
                       AppFont.CUSTOM -> stringResource(echo.music.iad1tya.R.string.font_custom)

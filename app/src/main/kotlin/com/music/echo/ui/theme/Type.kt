@@ -43,34 +43,31 @@ val GoogleSansFontFamily = FontFamily(
 )
 
 @OptIn(ExperimentalTextApi::class)
-val SansFlexFontFamily = FontFamily(
+val RobotoFlexFontFamily = FontFamily(
     Font(
-        resId = R.font.sans_flex,
+        resId = R.font.roboto_flex,
         weight = FontWeight.Normal,
         variationSettings = FontVariation.Settings(
             FontVariation.weight(400),
             FontVariation.width(100f),
-            FontVariation.Setting("ROND", 100f)
-        )
+        ),
     ),
     Font(
-        resId = R.font.sans_flex,
+        resId = R.font.roboto_flex,
         weight = FontWeight.Medium,
         variationSettings = FontVariation.Settings(
             FontVariation.weight(500),
             FontVariation.width(100f),
-            FontVariation.Setting("ROND", 100f)
-        )
+        ),
     ),
     Font(
-        resId = R.font.sans_flex,
+        resId = R.font.roboto_flex,
         weight = FontWeight.Bold,
         variationSettings = FontVariation.Settings(
             FontVariation.weight(700),
             FontVariation.width(100f),
-            FontVariation.Setting("ROND", 100f)
-        )
-    )
+        ),
+    ),
 )
 
 @OptIn(ExperimentalTextApi::class)

@@ -57,7 +57,7 @@ import echo.music.iad1tya.ui.component.Material3SettingsItem
 import echo.music.iad1tya.ui.component.Material3SettingsGroup
 import echo.music.iad1tya.utils.rememberPreference
 import echo.music.iad1tya.ui.theme.GoogleSansFontFamily
-import echo.music.iad1tya.ui.theme.SansFlexFontFamily
+import echo.music.iad1tya.ui.theme.RobotoFlexFontFamily
 import echo.music.iad1tya.ui.theme.OutfitFontFamily
 import echo.music.iad1tya.ui.theme.PlusJakartaSansFontFamily
 
@@ -112,7 +112,7 @@ fun FontSelectionScreen(
         when (AppFont.fromValue(selectedFont)) {
             AppFont.SYSTEM -> FontFamily.Default
             AppFont.GOOGLE_SANS -> GoogleSansFontFamily
-            AppFont.SANS_FLEX -> SansFlexFontFamily
+            AppFont.ROBOTO_FLEX -> RobotoFlexFontFamily
             AppFont.OUTFIT -> OutfitFontFamily
             AppFont.PLUS_JAKARTA_SANS -> PlusJakartaSansFontFamily
             AppFont.CUSTOM -> {
@@ -235,23 +235,23 @@ fun FontSelectionScreen(
                 Material3SettingsItem(
                     customIcon = {
                         AnimatedRadioButton(
-                            selected = selectedFont == AppFont.SANS_FLEX.value,
+                            selected = selectedFont == AppFont.ROBOTO_FLEX.value,
                             onClick = null
                         )
                     },
                     title = {
                         Text(
                             text = stringResource(R.string.font_sans_flex),
-                            fontFamily = SansFlexFontFamily
+                            fontFamily = RobotoFlexFontFamily
                         )
                     },
                     description = {
                         Text(
                             text = stringResource(R.string.font_sans_flex_desc),
-                            fontFamily = SansFlexFontFamily
+                            fontFamily = RobotoFlexFontFamily
                         )
                     },
-                    onClick = { onSelectedFontChange(AppFont.SANS_FLEX.value) }
+                    onClick = { onSelectedFontChange(AppFont.ROBOTO_FLEX.value) }
                 ),
                 Material3SettingsItem(
                     customIcon = {

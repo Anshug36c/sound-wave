@@ -795,7 +795,7 @@ val AmbientShowLyricsKey = booleanPreferencesKey("ambient_show_lyrics")
 enum class AppFont(val value: String) {
     SYSTEM("system"),
     GOOGLE_SANS("google_sans"),
-    SANS_FLEX("sans_flex"),
+    ROBOTO_FLEX("sans_flex"),
     OUTFIT("outfit"),
     PLUS_JAKARTA_SANS("plus_jakarta_sans"),
     CUSTOM("custom");

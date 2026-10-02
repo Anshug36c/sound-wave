@@ -44,7 +44,7 @@ fun echomusicTheme(
       when (AppFont.fromValue(selectedFontValue)) {
           AppFont.SYSTEM -> FontFamily.Default
           AppFont.GOOGLE_SANS -> GoogleSansFontFamily
-          AppFont.SANS_FLEX -> SansFlexFontFamily
+          AppFont.ROBOTO_FLEX -> RobotoFlexFontFamily
           AppFont.OUTFIT -> OutfitFontFamily
           AppFont.PLUS_JAKARTA_SANS -> PlusJakartaSansFontFamily
           else -> FontFamily.Default
