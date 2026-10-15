@@ -22,7 +22,8 @@ fun CreateFromTasteDialog(
     val isGenerating by viewModel.isGenerating.collectAsState()
 
     LaunchedEffect(Unit) {
-        viewModel.generateFromTaste(onPlaylistCreated)
+        // Named argument: generateFromTaste's first parameter is the requested track count.
+        viewModel.generateFromTaste(onPlaylistCreated = onPlaylistCreated)
     }
 
     Dialog(
