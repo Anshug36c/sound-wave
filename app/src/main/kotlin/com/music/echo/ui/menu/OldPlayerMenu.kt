@@ -36,6 +36,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+
+import androidx.compose.runtime.LaunchedEffect
+import echo.music.iad1tya.ui.component.DefaultDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +76,8 @@ import echo.music.iad1tya.constants.ExportDirectoryUriKey
 import echo.music.iad1tya.constants.ExportedSongIdsKey
 import echo.music.iad1tya.constants.ExportingSongIdsKey
 import echo.music.iad1tya.constants.ListItemHeight
+import echo.music.iad1tya.constants.VarispeedKey
+import echo.music.iad1tya.ui.menu.SpeedDialog
 import echo.music.iad1tya.extensions.toggleRepeatMode
 import echo.music.iad1tya.models.MediaMetadata
 import echo.music.iad1tya.models.toMediaMetadata
@@ -101,6 +116,9 @@ fun OldPlayerMenu(
         null
       }
     }
+  val varispeedMode by rememberPreference(VarispeedKey, defaultValue = false)
+  var showSpeedDialog by rememberSaveable { mutableStateOf(false) }
+
   val isCasting by castHandler?.isCasting?.collectAsState() ?: remember { mutableStateOf(false) }
   val castVolume by
     castHandler?.castVolume?.collectAsState() ?: remember { mutableFloatStateOf(1f) }
@@ -247,6 +265,175 @@ fun OldPlayerMenu(
     }
   }
 
+  var showSongDnaDialog by rememberSaveable { mutableStateOf(false) }
+  var dnaAlbum by rememberSaveable { mutableStateOf("Fetching...") }
+  var dnaMeaning by rememberSaveable { mutableStateOf("Fetching info from Wikipedia...") }
+  var dnaBio by rememberSaveable { mutableStateOf("Fetching biography...") }
+  var dnaFetched by rememberSaveable { mutableStateOf(false) }
+
+  if (showSongDnaDialog) {
+    LaunchedEffect(mediaMetadata.id) {
+      if (!dnaFetched) {
+         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val artistName = mediaMetadata.artists.firstOrNull()?.name ?: ""
+                val songTitle = mediaMetadata.title
+                val query = java.net.URLEncoder.encode("$artistName $songTitle", "UTF-8")
+                val searchUrl = java.net.URL("https://genius.com/api/search/multi?q=$query")
+                val searchJson = searchUrl.readText()
+                val searchRoot = org.json.JSONObject(searchJson).getJSONObject("response")
+                val sections = searchRoot.getJSONArray("sections")
+                var songId = -1
+                for (i in 0 until sections.length()) {
+                    val sec = sections.getJSONObject(i)
+                    if (sec.getString("type") == "top_hit" || sec.getString("type") == "song") {
+                        val hits = sec.getJSONArray("hits")
+                        if (hits.length() > 0) {
+                            songId = hits.getJSONObject(0).getJSONObject("result").getInt("id")
+                            break
+                        }
+                    }
+                }
+                if (songId == -1) {
+                    dnaAlbum = mediaMetadata.album?.title ?: "Unknown"
+                    dnaMeaning = "Meaning not found."
+                    dnaBio = "Biography not found."
+                } else {
+                    val songUrl = java.net.URL("https://genius.com/api/songs/$songId?text_format=plain")
+                    val songJson = songUrl.readText()
+                    val songObj = org.json.JSONObject(songJson).getJSONObject("response").getJSONObject("song")
+                    
+                    if (songObj.has("album") && !songObj.isNull("album")) {
+                        dnaAlbum = songObj.getJSONObject("album").getString("name")
+                    } else {
+                        dnaAlbum = mediaMetadata.album?.title ?: "Unknown"
+                    }
+                    
+                    dnaMeaning = "Info not found." // Reset so Wikipedia can override it
+                    
+                    var artistId = -1
+                    if (songObj.has("primary_artist") && !songObj.isNull("primary_artist")) {
+                        artistId = songObj.getJSONObject("primary_artist").getInt("id")
+                    }
+                    
+                    if (artistId != -1) {
+                        val artistUrl = java.net.URL("https://genius.com/api/artists/$artistId?text_format=plain")
+                        val artistJson = artistUrl.readText()
+                        val artistObj = org.json.JSONObject(artistJson).getJSONObject("response").getJSONObject("artist")
+                        if (artistObj.has("description") && !artistObj.isNull("description")) {
+                            dnaBio = artistObj.getJSONObject("description").getString("plain")
+                            if (dnaBio == "?") dnaBio = "Biography not found."
+                        } else {
+                            dnaBio = "Biography not found."
+                        }
+                    } else {
+                        dnaBio = "Biography not found."
+                    }
+                }
+                
+                // --- WIKIPEDIA FALLBACKS ---
+                
+                // 1. Wikipedia exclusively for About the Song
+                if (true) {
+                    dnaMeaning = "Info not found." 
+                    try {
+                        val wpQuery = java.net.URLEncoder.encode(songTitle + " " + dnaAlbum, "UTF-8")
+                        val wpSearchUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$wpQuery&utf8=&format=json")
+                        val wpSearchRoot = org.json.JSONObject(wpSearchUrl.readText()).getJSONObject("query")
+                        val wpSearchList = wpSearchRoot.getJSONArray("search")
+                        if (wpSearchList.length() > 0) {
+                            val wpTitle = wpSearchList.getJSONObject(0).getString("title")
+                            val wpTitleEnc = java.net.URLEncoder.encode(wpTitle, "UTF-8")
+                            val wpExtractUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exsentences=4&exlimit=1&titles=$wpTitleEnc&explaintext=1&format=json")
+                            val wpExtractRoot = org.json.JSONObject(wpExtractUrl.readText()).getJSONObject("query").getJSONObject("pages")
+                            val firstKey = wpExtractRoot.keys().next()
+                            val extract = wpExtractRoot.getJSONObject(firstKey).optString("extract", "")
+                            if (extract.isNotBlank() && !extract.contains("may refer to")) {
+                                dnaMeaning = extract
+                            }
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+                
+                // 2. Wikipedia fallback for Artist Bio
+                if (dnaBio == "Biography not found." && artistName.isNotBlank()) {
+                    try {
+                        val wpQuery = java.net.URLEncoder.encode(artistName, "UTF-8")
+                        val wpSearchUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$wpQuery&utf8=&format=json")
+                        val wpSearchRoot = org.json.JSONObject(wpSearchUrl.readText()).getJSONObject("query")
+                        val wpSearchList = wpSearchRoot.getJSONArray("search")
+                        if (wpSearchList.length() > 0) {
+                            val wpTitle = wpSearchList.getJSONObject(0).getString("title")
+                            val wpTitleEnc = java.net.URLEncoder.encode(wpTitle, "UTF-8")
+                            val wpExtractUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exsentences=4&exlimit=1&titles=$wpTitleEnc&explaintext=1&format=json")
+                            val wpExtractRoot = org.json.JSONObject(wpExtractUrl.readText()).getJSONObject("query").getJSONObject("pages")
+                            val firstKey = wpExtractRoot.keys().next()
+                            val extract = wpExtractRoot.getJSONObject(firstKey).optString("extract", "")
+                            if (extract.isNotBlank() && !extract.contains("may refer to")) {
+                                dnaBio = extract
+                            }
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                dnaAlbum = mediaMetadata.album?.title ?: "Unknown"
+                dnaMeaning = "Failed to fetch meaning."
+                dnaBio = "Failed to fetch biography."
+            }
+            dnaFetched = true
+         }
+      }
+    }
+
+    DefaultDialog(
+      onDismiss = { showSongDnaDialog = false },
+      icon = {
+        androidx.compose.foundation.Image(
+          painter = painterResource(R.drawable.songdna),
+          contentDescription = null,
+          modifier = Modifier.size(24.dp).clip(androidx.compose.foundation.shape.CircleShape)
+        )
+      },
+      title = {
+        Text("Song DNA", fontWeight = FontWeight.Bold)
+      },
+      buttons = {
+        TextButton(onClick = { showSongDnaDialog = false }) { Text(stringResource(android.R.string.ok)) }
+      }
+    ) {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+      ) {
+        item {
+            Column {
+                Text("Movie / Album", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(dnaAlbum, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        item {
+            Column {
+                Text("About the Song", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(dnaMeaning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        item {
+            Column {
+                Text("About the Artist", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(dnaBio, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+      }
+    }
+  }
+
+  if (showSpeedDialog) {
+    SpeedDialog(
+      onDismiss = { showSpeedDialog = false },
+    )
+  }
+
   if (showPitchTempoDialog) {
     TempoPitchDialog(onDismiss = { showPitchTempoDialog = false })
   }
@@ -357,6 +544,32 @@ fun OldPlayerMenu(
       Material3MenuGroup(
         items =
           buildList {
+            val infiniteTransition = rememberInfiniteTransition()
+            val animatedColor by infiniteTransition.animateColor(
+                initialValue = MaterialTheme.colorScheme.primary,
+                targetValue = MaterialTheme.colorScheme.tertiary,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(400, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dnaColor"
+            )
+
+            add(
+              Material3MenuItemData(
+                title = { Text(text = "Song DNA", color = animatedColor, fontWeight = FontWeight.Bold) },
+                icon = {
+                  androidx.compose.foundation.Image(
+                    painter = painterResource(R.drawable.songdna),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                  )
+                },
+                onClick = {
+                  showSongDnaDialog = true
+                }
+              )
+            )
             add(
               Material3MenuItemData(
                 customComposable = { echo.music.iad1tya.ui.component.CastButton(asMenuItem = true) }
@@ -859,7 +1072,7 @@ fun OldPlayerMenu(
                     modifier = Modifier.size(24.dp)
                   )
                 },
-                onClick = { showPitchTempoDialog = true }
+                onClick = { if (!varispeedMode) showPitchTempoDialog = true else showSpeedDialog = true }
               )
             )
           }

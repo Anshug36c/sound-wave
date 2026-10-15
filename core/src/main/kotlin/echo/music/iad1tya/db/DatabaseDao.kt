@@ -56,10 +56,9 @@ import java.text.Collator
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.Locale
+import kotlin.random.Random
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 
 @Dao
 interface DatabaseDao {
@@ -260,6 +259,8 @@ interface DatabaseDao {
     previewSize: Int = 3,
   ): Flow<List<Song>>
 
+  // Room rereads relation queries after resetting the statement. Keep the randomized selection
+  // deterministic for that statement, otherwise its relation map can lack IDs from the second pass.
   @Transaction
   @Query(
     """
@@ -285,14 +286,17 @@ interface DatabaseDao {
                          SELECT id
                          FROM (SELECT id
                                FROM song
-                               ORDER BY totalPlayTime DESC
+                               ORDER BY ((rowid * :randomSeed) & 2147483647), id
                                LIMIT 10))
           AND song.hideFromQuickPicks = 0
-        ORDER BY referredCount DESC
+        ORDER BY ((song.rowid * :randomSeed) & 2147483647), song.id
         LIMIT 100
     """,
   )
-  fun quickPicks(now: Long = System.currentTimeMillis()): Flow<List<Song>>
+  fun quickPicks(
+    now: Long = System.currentTimeMillis(),
+    randomSeed: Int = Random.nextInt(1, Int.MAX_VALUE) or 1,
+  ): Flow<List<Song>>
 
   @Transaction
   @Query(
@@ -586,10 +590,14 @@ interface DatabaseDao {
                  JOIN song on song.id = t.eid
         WHERE 0.2 * t.oldPlayTime > t.newPlayTime
           AND song.hideFromQuickPicks = 0
+        ORDER BY ((song.rowid * :randomSeed) & 2147483647), song.id
         LIMIT 100
     """
   )
-  fun forgottenFavorites(now: Long = System.currentTimeMillis()): Flow<List<Song>>
+  fun forgottenFavorites(
+    now: Long = System.currentTimeMillis(),
+    randomSeed: Int = Random.nextInt(1, Int.MAX_VALUE) or 1,
+  ): Flow<List<Song>>
 
   @Transaction
   @Query(
@@ -1069,11 +1077,13 @@ interface DatabaseDao {
   )
   fun playlist(playlistId: String): Flow<Playlist?>
 
+  @Transaction
   @Query(
     "SELECT *, (SELECT COUNT(*) FROM playlist_song_map WHERE playlistId = playlist.id) AS songCount FROM playlist WHERE id = :playlistId"
   )
   suspend fun getPlaylistById(playlistId: String): Playlist?
 
+  @Transaction
   @Query(
     "SELECT *, (SELECT COUNT(*) FROM playlist_song_map WHERE playlistId = playlist.id) AS songCount FROM playlist WHERE id = :playlistId"
   )
@@ -1245,7 +1255,10 @@ interface DatabaseDao {
 
   @Transaction
   @Query("SELECT * FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp")
-  fun eventsForPeriod(fromTimeStamp: Long, toTimeStamp: Long): kotlinx.coroutines.flow.Flow<List<EventWithSong>>
+  fun eventsForPeriod(
+    fromTimeStamp: Long,
+    toTimeStamp: Long
+  ): kotlinx.coroutines.flow.Flow<List<EventWithSong>>
 
   @Transaction
   @Query("SELECT * FROM event ORDER BY rowId ASC LIMIT 1")
@@ -1293,19 +1306,18 @@ interface DatabaseDao {
   @Query("UPDATE song SET totalPlayTime = totalPlayTime + :playTime WHERE id = :songId")
   fun incrementTotalPlayTime(songId: String, playTime: Long)
 
+  @Query("UPDATE song SET liked = :liked, likedDate = :likedDate WHERE id = :songId")
+  fun updateLikedStatus(songId: String, liked: Boolean, likedDate: LocalDateTime?)
+
   @Query(
     "UPDATE playCount SET count = count + 1 WHERE song = :songId AND year = :year AND month = :month"
   )
   fun incrementPlayCount(songId: String, year: Int, month: Int)
 
+  @Transaction
   fun incrementPlayCount(songId: String) {
     val time = LocalDateTime.now().atOffset(ZoneOffset.UTC)
-    var oldCount: Int
-    runBlocking { oldCount = getPlayCountByMonth(songId, time.year, time.monthValue).first() }
-
-    if (oldCount <= 0) {
-      insert(PlayCountEntity(songId, time.year, time.monthValue, 0))
-    }
+    insert(PlayCountEntity(songId, time.year, time.monthValue, 0))
     incrementPlayCount(songId, time.year, time.monthValue)
   }
 
@@ -1756,15 +1768,32 @@ interface DatabaseDao {
   @Query("DELETE FROM album_artist_map WHERE albumId IN (:albumIds)")
   fun deleteAlbumArtistMapsByAlbumIds(albumIds: List<String>)
 
-  @Query("SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp")
+  @Query(
+    "SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp"
+  )
   fun getPlayTimeForDay(fromTimeStamp: Long, toTimeStamp: Long): kotlinx.coroutines.flow.Flow<Long>
 
-  @Query("SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp")
-  fun getSongsPlayTimeForDay(fromTimeStamp: Long, toTimeStamp: Long): kotlinx.coroutines.flow.Flow<Long>
+  @Query(
+    "SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp"
+  )
+  fun getSongsPlayTimeForDay(
+    fromTimeStamp: Long,
+    toTimeStamp: Long
+  ): kotlinx.coroutines.flow.Flow<Long>
 
-  @Query("SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp")
-  fun getArtistPlayTimeForDay(fromTimeStamp: Long, toTimeStamp: Long): kotlinx.coroutines.flow.Flow<Long>
+  @Query(
+    "SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp"
+  )
+  fun getArtistPlayTimeForDay(
+    fromTimeStamp: Long,
+    toTimeStamp: Long
+  ): kotlinx.coroutines.flow.Flow<Long>
 
-  @Query("SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp")
-  fun getAlbumPlayTimeForDay(fromTimeStamp: Long, toTimeStamp: Long): kotlinx.coroutines.flow.Flow<Long>
+  @Query(
+    "SELECT COALESCE(SUM(playTime), 0) FROM event WHERE timestamp >= :fromTimeStamp AND timestamp < :toTimeStamp"
+  )
+  fun getAlbumPlayTimeForDay(
+    fromTimeStamp: Long,
+    toTimeStamp: Long
+  ): kotlinx.coroutines.flow.Flow<Long>
 }

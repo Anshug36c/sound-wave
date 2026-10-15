@@ -2,7 +2,9 @@
 
 Soundwave is currently a source project copy; no Soundwave release feed or download channel is configured. The in-app Updates page is informational and does not check for or install updates.
 
-The Gradle default version is `1.0.0` (`versionCode` 1). Treat that as a development baseline, not a published release.
+The Gradle default version is `1.1.0` (`versionCode` 2), which is the first baseline synced to the
+Echo-Music v1.4.3 upstream source. Treat it as a development baseline, not a published release: no
+artifact has been distributed under it yet.
 
 ## Before publishing a release
 

@@ -23,6 +23,23 @@ val AppIconTypeKey = stringPreferencesKey("app_icon_type")
 
 val EnableHighRefreshRateKey = booleanPreferencesKey("enableHighRefreshRate")
 val EnableHapticsKey = booleanPreferencesKey("enableHaptics")
+val HapticIntensityKey = stringPreferencesKey("haptic_intensity")
+val EnableClickHapticsKey = booleanPreferencesKey("enable_click_haptics")
+val EnableLongPressHapticsKey = booleanPreferencesKey("enable_long_press_haptics")
+val EnableScrollEdgeHapticsKey = booleanPreferencesKey("enable_scroll_edge_haptics")
+val EnableSliderHapticsKey = booleanPreferencesKey("enable_slider_haptics")
+
+enum class HapticIntensity(val label: String, val scaleFactor: Float) {
+  LIGHT("Light", 0.4f),
+  MEDIUM("Medium", 0.75f),
+  STRONG("Strong", 1.0f);
+
+  companion object {
+    fun fromName(name: String?): HapticIntensity =
+      entries.find { it.name.equals(name, ignoreCase = true) } ?: MEDIUM
+  }
+}
+
 val DynamicThemeKey = booleanPreferencesKey("dynamicTheme")
 val SelectedThemeColorKey = intPreferencesKey("selectedThemeColor")
 val DarkModeKey = stringPreferencesKey("darkMode")
@@ -49,6 +66,7 @@ val SlimNavBarKey = booleanPreferencesKey("slimNavBar")
 val GridItemsSizeKey = stringPreferencesKey("gridItemSize")
 val SliderStyleKey = stringPreferencesKey("sliderStyle")
 val SquigglySliderKey = booleanPreferencesKey("squigglySlider")
+val WavyPlayPauseKey = booleanPreferencesKey("wavyPlayPause")
 val SwipeToSongKey = booleanPreferencesKey("SwipeToSong")
 val SwipeToRemoveSongKey = booleanPreferencesKey("SwipeToRemoveSong")
 val UseNewPlayerDesignKey = booleanPreferencesKey("useNewPlayerDesign")
@@ -59,6 +77,8 @@ val HidePlayerThumbnailKey = booleanPreferencesKey("hidePlayerThumbnail")
 val ThumbnailCornerRadiusKey = floatPreferencesKey("thumbnailCornerRadius")
 val CropAlbumArtKey = booleanPreferencesKey("cropAlbumArt")
 val SeekExtraSeconds = booleanPreferencesKey("seekExtraSeconds")
+val VarispeedKey = booleanPreferencesKey("varispeed")
+
 val PauseOnMute = booleanPreferencesKey("pauseOnMute")
 val ResumeOnBluetoothConnectKey = booleanPreferencesKey("resumeOnBluetoothConnect")
 val KeepScreenOn = booleanPreferencesKey("keepScreenOn")
@@ -221,6 +241,8 @@ val MixSortDescendingKey = booleanPreferencesKey("albumSortDescending")
 
 val LocalSongsMinDurationSecondsKey = intPreferencesKey("local_songs_min_duration_seconds")
 val LocalSongsExcludedFoldersKey = stringSetPreferencesKey("local_songs_excluded_folders")
+val LocalSongsIncludedFoldersKey = stringSetPreferencesKey("local_songs_included_folders")
+val LocalSongsFolderFilterModeKey = stringPreferencesKey("local_songs_folder_filter_mode")
 val LocalStorageDirsKey = stringSetPreferencesKey("local_storage_dirs")
 val DiscordTokenKey = stringPreferencesKey("discord_token")
 val DiscordRefreshTokenKey = stringPreferencesKey("discord_refresh_token")
@@ -458,6 +480,13 @@ val LyricsRomanizeHindiKey = booleanPreferencesKey("lyricsRomanizeHindi")
 val LyricsRomanizePunjabiKey = booleanPreferencesKey("lyricsRomanizePunjabi")
 val LyricsRomanizeAsMainKey = booleanPreferencesKey("lyricsRomanizeAsMain")
 val LyricsRomanizeCyrillicByLineKey = booleanPreferencesKey("lyricsRomanizeCyrillicByLine")
+// Soundwave ships no cloud AI prompt or AI lyric-translation providers, so the
+// upstream OpenRouter/DeepL/translate preference keys are intentionally absent.
+// The recommendation/taste keys below back the offline Local Taste Engine.
+val AiRecommendationsKey = booleanPreferencesKey("aiRecommendations")
+val LastAiRecommendationUpdateDayKey = longPreferencesKey("lastAiRecommendationUpdateDay")
+val CreateFromTasteDailyKey = booleanPreferencesKey("createFromTasteDaily")
+val LastCreateFromTasteUpdateDayKey = longPreferencesKey("lastCreateFromTasteUpdateDay")
 val LyricsGlowEffectKey = booleanPreferencesKey("lyricsGlowEffect")
 val AppleMusicLyricsBlurKey = booleanPreferencesKey("appleMusicLyricsBlur")
 val LyricsStandardBlurKey = booleanPreferencesKey("lyricsStandardBlur")
@@ -766,7 +795,6 @@ val PreloadNextSongEnabledKey = booleanPreferencesKey("preload_next_song_enabled
 val PreloadNextSongLimitKey = intPreferencesKey("preload_next_song_limit")
 val PreloadLyricsEnabledKey = booleanPreferencesKey("preload_lyrics_enabled")
 
-
 val LiquidGlassGlobalEnabledKey = booleanPreferencesKey("liquidGlassGlobalEnabled")
 val LiquidGlassTextColorKey = intPreferencesKey("liquidGlassTextColor")
 val LiquidGlassSurfaceTintColorKey = intPreferencesKey("liquidGlassSurfaceTintColor")
@@ -790,21 +818,36 @@ val AmbientArtScaleKey = floatPreferencesKey("ambient_art_scale")
 val AmbientShowTitleKey = booleanPreferencesKey("ambient_show_title")
 val AmbientShowArtistKey = booleanPreferencesKey("ambient_show_artist")
 val AmbientShowLyricsKey = booleanPreferencesKey("ambient_show_lyrics")
+val AmbientShowArtKey = booleanPreferencesKey("ambient_show_art")
+val AmbientFullScreenArtKey = booleanPreferencesKey("ambient_full_screen_art")
 
+
+val AmbientSpacingKey = floatPreferencesKey("ambient_spacing")
 
 enum class AppFont(val value: String) {
-    SYSTEM("system"),
-    GOOGLE_SANS("google_sans"),
-    ROBOTO_FLEX("sans_flex"),
-    OUTFIT("outfit"),
-    PLUS_JAKARTA_SANS("plus_jakarta_sans"),
-    CUSTOM("custom");
+  SYSTEM("system"),
+  GOOGLE_SANS("google_sans"),
+  ROBOTO_FLEX("sans_flex"),
+  OUTFIT("outfit"),
+  PLUS_JAKARTA_SANS("plus_jakarta_sans"),
+  CUSTOM("custom");
 
-    companion object {
-        fun fromValue(value: String): AppFont = entries.find { it.value == value } ?: SYSTEM
-    }
+  companion object {
+    fun fromValue(value: String): AppFont = entries.find { it.value == value } ?: SYSTEM
+  }
 }
 
 val SelectedFontKey = stringPreferencesKey("selected_app_font")
 val CustomFontPathKey = androidx.datastore.preferences.core.stringPreferencesKey("custom_font_path")
-val BlockedArtistsKey = androidx.datastore.preferences.core.stringSetPreferencesKey("blockedArtists")
+val BlockedArtistsKey =
+  androidx.datastore.preferences.core.stringSetPreferencesKey("blockedArtists")
+
+val EnableBitPerfectUsbDacKey = booleanPreferencesKey("enable_bit_perfect_usb_dac")
+val UsbDacVolumeModeKey = stringPreferencesKey("usb_dac_volume_mode")
+
+enum class RecommendationSource {
+    YOUTUBE,
+    SPOTIFY
+}
+
+val RecommendationSourceKey = stringPreferencesKey("recommendation_source")

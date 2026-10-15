@@ -27,6 +27,7 @@ import echo.music.iad1tya.ui.screens.artist.ArtistScreen
 import echo.music.iad1tya.ui.screens.artist.ArtistSongsScreen
 import echo.music.iad1tya.ui.screens.equalizer.EqScreen
 import echo.music.iad1tya.ui.screens.equalizer.axion.AxionEqScreen
+import echo.music.iad1tya.ui.screens.generate.GenerateScreen
 import echo.music.iad1tya.ui.screens.library.LibraryScreen
 import echo.music.iad1tya.ui.screens.library.LocalSongScreen
 import echo.music.iad1tya.ui.screens.playlist.AutoPlaylistScreen
@@ -39,15 +40,15 @@ import echo.music.iad1tya.ui.screens.recognition.RecognitionHistoryScreen
 import echo.music.iad1tya.ui.screens.recognition.RecognitionScreen
 import echo.music.iad1tya.ui.screens.search.OnlineSearchResult
 import echo.music.iad1tya.ui.screens.search.SearchScreen
-import echo.music.iad1tya.ui.screens.settings.BlockedArtistsScreen
 import echo.music.iad1tya.ui.screens.settings.AboutScreen
 import echo.music.iad1tya.ui.screens.settings.AccountSettingsScreen
 import echo.music.iad1tya.ui.screens.settings.AppIconSettingsScreen
 import echo.music.iad1tya.ui.screens.settings.AppearanceSettings
-import echo.music.iad1tya.ui.screens.settings.GlassEffectSettings
 import echo.music.iad1tya.ui.screens.settings.BackupAndRestore
+import echo.music.iad1tya.ui.screens.settings.BlockedArtistsScreen
 import echo.music.iad1tya.ui.screens.settings.ContentSettings
 import echo.music.iad1tya.ui.screens.settings.DarkMode
+import echo.music.iad1tya.ui.screens.settings.GlassEffectSettings
 import echo.music.iad1tya.ui.screens.settings.PlayerSettings
 import echo.music.iad1tya.ui.screens.settings.PrivacySettings
 import echo.music.iad1tya.ui.screens.settings.SettingsScreen
@@ -278,7 +279,7 @@ fun NavGraphBuilder.navigationBuilder(
   }
 
   composable("settings") { SettingsScreen(navController, scrollBehavior) }
-    composable("blocked_artists") { BlockedArtistsScreen(navController) }
+  composable("blocked_artists") { BlockedArtistsScreen(navController) }
 
   composable(
     route = "settings/update?highlightKey={highlightKey}",
@@ -314,7 +315,9 @@ fun NavGraphBuilder.navigationBuilder(
     )
   }
 
-  composable("ambient_settings") { echo.music.iad1tya.ui.screens.settings.AmbientSettingsScreen(navController) }
+  composable("ambient_settings") {
+    echo.music.iad1tya.ui.screens.settings.AmbientSettingsScreen(navController)
+  }
 
   composable(
     route = "settings/appearance?highlightKey={highlightKey}",
@@ -336,6 +339,18 @@ fun NavGraphBuilder.navigationBuilder(
   }
 
   composable("settings/appearance/theme") { ThemeScreen(navController) }
+  composable(
+    route = "settings/appearance/haptics?highlightKey={highlightKey}",
+    arguments = listOf(navArgument("highlightKey") { type = NavType.StringType; nullable = true })
+  ) { backStackEntry ->
+    echo.music.iad1tya.ui.screens.settings.HapticsSettings(
+      navController = navController,
+      scrollBehavior = scrollBehavior,
+      activity = activity,
+      snackbarHostState = snackbarHostState,
+      highlightKey = backStackEntry.arguments?.getString("highlightKey")
+    )
+  }
 
   composable("settings/appearance/app_icon") {
     AppIconSettingsScreen(navController, activity, snackbarHostState)
@@ -349,21 +364,16 @@ fun NavGraphBuilder.navigationBuilder(
     com.music.echo.ui.screens.ListeningSummaryScreen(navController)
   }
 
-
   composable(
-        route = "detailed_listening_history/{startTimestamp}",
-        arguments = listOf(
-            navArgument("startTimestamp") {
-                type = NavType.StringType
-            },
-        ),
-    ) {
-        echo.music.iad1tya.ui.screens.DetailedListeningHistoryScreen(navController)
-    }
+    route = "detailed_listening_history/{startTimestamp}",
+    arguments =
+      listOf(
+        navArgument("startTimestamp") { type = NavType.StringType },
+      ),
+  ) {
+    echo.music.iad1tya.ui.screens.DetailedListeningHistoryScreen(navController)
+  }
 
-
-
-  
   composable("settings/appearance/liquidglass") {
     GlassEffectSettings(navController, scrollBehavior)
   }
@@ -464,6 +474,12 @@ fun NavGraphBuilder.navigationBuilder(
     )
   }
 
+  composable("settings/extensions") {
+    com.music.echo.ui.screens.settings.ExtensionSettingsScreen(
+        navController = navController,
+        scrollBehavior = scrollBehavior
+    )
+  }
   composable("settings/discord") {
     echo.music.iad1tya.ui.screens.settings.DiscordSettings(navController, scrollBehavior)
   }
@@ -507,4 +523,5 @@ fun NavGraphBuilder.navigationBuilder(
   composable("recognition") { RecognitionScreen(navController) }
 
   composable("recognition_history") { RecognitionHistoryScreen(navController) }
+  composable("generate") { GenerateScreen(navController) }
 }

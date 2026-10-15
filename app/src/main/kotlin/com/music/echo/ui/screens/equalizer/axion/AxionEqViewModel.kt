@@ -5,11 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import echo.music.iad1tya.eq.EqualizerService
-import echo.music.iad1tya.eq.data.EQProfileRepository
-import echo.music.iad1tya.eq.data.FilterType
-import echo.music.iad1tya.eq.data.ParametricEQBand
-import echo.music.iad1tya.eq.data.SavedEQProfile
+import echo.music.dsp.controller.DspController
+import echo.music.dsp.core.models.FilterType
+import echo.music.dsp.core.models.ParametricEQBand
+import echo.music.dsp.core.models.SavedEQProfile
+import echo.music.dsp.data.EQProfileRepository
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,7 +23,7 @@ class AxionEqViewModel
 @Inject
 constructor(
   @ApplicationContext private val context: Context,
-  private val equalizerService: EqualizerService,
+  private val dspController: DspController,
   private val eqProfileRepository: EQProfileRepository
 ) : ViewModel() {
 
@@ -62,7 +62,7 @@ constructor(
       applyToService()
     } else {
       viewModelScope.launch { eqProfileRepository.setActiveProfile(null) }
-      equalizerService.disable()
+      dspController.disableEqualizer()
     }
   }
 
@@ -161,7 +161,7 @@ constructor(
       eqProfileRepository.saveProfile(profile)
       eqProfileRepository.setActiveProfile(profile.id)
 
-      equalizerService.applyProfile(profile)
+      dspController.applyProfile(profile)
     }
   }
 }

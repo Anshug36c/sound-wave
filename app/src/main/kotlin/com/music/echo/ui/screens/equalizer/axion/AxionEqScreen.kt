@@ -30,7 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import echo.music.iad1tya.R
-import echo.music.iad1tya.eq.data.SavedEQProfile
+import echo.music.dsp.core.models.SavedEQProfile
 import echo.music.iad1tya.ui.component.Material3SettingsGroup
 import echo.music.iad1tya.ui.component.Material3SettingsItem
 import kotlin.math.abs
@@ -93,6 +93,32 @@ fun AxionEqScreen(onBackClick: () -> Unit, viewModel: AxionEqViewModel = hiltVie
             )
           )
       )
+
+      var showAutoEqSheet by remember { mutableStateOf(false) }
+
+      Material3SettingsGroup(
+        items = listOf(
+          Material3SettingsItem(
+            icon = androidx.compose.ui.res.painterResource(R.drawable.search),
+            title = { Text("AutoEq Profiles") },
+            description = { Text("Find optimal EQ for your headphones") },
+            onClick = { showAutoEqSheet = true }
+          )
+        )
+      )
+
+      if (showAutoEqSheet) {
+          AutoEqBottomSheet(
+              onDismissRequest = { showAutoEqSheet = false },
+              onApplyEq = { newGains ->
+                  viewModel.setEnabled(true)
+                  viewModel.setMode(1) // Switch to Advanced
+                  for (i in newGains.indices) {
+                      viewModel.setBandGain(i, newGains[i])
+                  }
+              }
+          )
+      }
 
       Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),

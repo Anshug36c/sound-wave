@@ -140,6 +140,19 @@ fun SettingsScreen(
       }
 
 
+      if ("listening summary".contains(searchLower)) {
+        add(
+          Material3SettingsItem(
+            icon = painterResource(echo.music.iad1tya.R.drawable.history),
+            title = { Text(stringResource(echo.music.iad1tya.R.string.listening_summary)) },
+            description = {
+              Text(stringResource(echo.music.iad1tya.R.string.listening_summary_desc))
+            },
+            onClick = { navController.navigate("settings/listening_summary") }
+          )
+        )
+      }
+
       if (
         appearanceText.lowercase().contains(searchLower) ||
           appearanceDesc.lowercase().contains(searchLower)
@@ -196,6 +209,8 @@ fun SettingsScreen(
         )
       }
 
+
+
       if (
         privacyText.lowercase().contains(searchLower) ||
           privacyDesc.lowercase().contains(searchLower)
@@ -225,18 +240,6 @@ fun SettingsScreen(
         )
       }
 
-      if (
-        "listening summary".contains(searchLower)
-      ) {
-        add(
-          Material3SettingsItem(
-            icon = painterResource(echo.music.iad1tya.R.drawable.history),
-            title = { Text(stringResource(echo.music.iad1tya.R.string.listening_summary)) },
-            description = { Text(stringResource(echo.music.iad1tya.R.string.listening_summary_desc)) },
-            onClick = { navController.navigate("settings/listening_summary") }
-          )
-        )
-      }
 
       if (
         backupText.lowercase().contains(searchLower) || backupDesc.lowercase().contains(searchLower)
@@ -339,7 +342,19 @@ fun SettingsScreen(
                   val finalRoute =
                     if (setting.route.contains("?")) "${setting.route}&highlightKey=$encodedTitle"
                     else "${setting.route}?highlightKey=$encodedTitle"
-                  navController.navigate(finalRoute)
+                  // Guard against indexed settings whose destination is not in this build's
+                  // graph; navigating to an unknown route would otherwise throw.
+                  val node = navController.currentBackStackEntry?.destination
+                  if (node != null && navController.graph.findNode(finalRoute) != null) {
+                    navController.navigate(finalRoute)
+                  } else {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.settings_search_destination_unavailable),
+                        Toast.LENGTH_SHORT
+                      )
+                      .show()
+                  }
                 }
               )
             }
@@ -364,14 +379,23 @@ fun SettingsScreen(
     } else {
       Spacer(modifier = Modifier.height(16.dp))
 
-      // Keep the main settings categories grouped in their visual sections.
-      val accountGroup = itemsList.take(1)
-      val playerGroup = itemsList.drop(1).take(3)
-      val dataGroup = itemsList.drop(4).take(4)
-      val systemGroup = itemsList.drop(8)
+      // Soundwave ships no AI settings entry, so the unfiltered list has a stable order:
+      //   0 Account | 1 Listening Summary | 2 Appearance | 3 Player | 4 Listen Together |
+      //   5 Content | 6 Privacy | 7 Storage | 8 Backup | 9 Update | 10 Supported Links | 11 About
+      // The upstream indices assumed an extra AI item at position 1; they are shifted here so the
+      // visual sections keep their intended contents.
+      val accountGroup = itemsList.take(1) // Account
+      val listeningSummaryGroup = itemsList.drop(1).take(1) // Listening Summary
+      val playerGroup = itemsList.drop(2).take(3) // Appearance, Player, Listen Together
+      val dataGroup = itemsList.drop(5).take(4) // Content, Privacy, Storage, Backup
+      val systemGroup = itemsList.drop(9) // Update, Supported Links, About
 
       if (accountGroup.isNotEmpty()) {
         Material3SettingsGroup(scrollState = scrollState, items = accountGroup)
+        Spacer(modifier = Modifier.height(16.dp))
+      }
+      if (listeningSummaryGroup.isNotEmpty()) {
+        Material3SettingsGroup(scrollState = scrollState, items = listeningSummaryGroup)
         Spacer(modifier = Modifier.height(16.dp))
       }
       if (playerGroup.isNotEmpty()) {

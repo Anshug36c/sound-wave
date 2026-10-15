@@ -34,7 +34,12 @@ include(
     ":unison",
     ":core",
     ":lyrics",
-    ":playback"
+    ":playback",
+    ":usbaudio",
+    ":metadata",
+    ":dsp-core",
+    ":audio-dsp",
+    ":domain"
 )
 
 

@@ -16,10 +16,10 @@ import com.music.innertube.models.Run
 import com.music.innertube.models.SearchSuggestions
 import com.music.innertube.models.SectionListRenderer
 import com.music.innertube.models.SongItem
+import com.music.innertube.models.TasteSignals
 import com.music.innertube.models.WatchEndpoint
 import com.music.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_ATV
 import com.music.innertube.models.YTItem
-import com.music.innertube.models.filterBlockedArtists
 import com.music.innertube.models.YouTubeClient
 import com.music.innertube.models.YouTubeClient.Companion.WEB
 import com.music.innertube.models.YouTubeClient.Companion.WEB_REMIX
@@ -27,6 +27,7 @@ import com.music.innertube.models.YouTubeLocale
 import com.music.innertube.models.comment.CommentResponse
 import com.music.innertube.models.comment.CommentThreadRenderer
 import com.music.innertube.models.extractCountText
+import com.music.innertube.models.filterBlockedArtists
 import com.music.innertube.models.getContinuation
 import com.music.innertube.models.getItems
 import com.music.innertube.models.oddElements
@@ -164,7 +165,8 @@ object YouTube {
               SearchSuggestionPage.fromMusicResponsiveListItemRenderer(renderer)
             }
           }
-          .orEmpty().filterBlockedArtists()
+          .orEmpty()
+          .filterBlockedArtists()
     )
   }
 
@@ -272,7 +274,12 @@ object YouTube {
         ?.firstOrNull()
     SearchResult(
       items =
-        musicShelfRenderer?.contents?.getItems()?.mapNotNull { SearchPage.toYTItem(it) }.orEmpty().filterBlockedArtists(),
+        musicShelfRenderer
+          ?.contents
+          ?.getItems()
+          ?.mapNotNull { SearchPage.toYTItem(it) }
+          .orEmpty()
+          .filterBlockedArtists(),
       continuation = musicShelfRenderer?.continuations?.getContinuation()
     )
   }
@@ -1021,47 +1028,48 @@ object YouTube {
       PlaylistContinuationPage(songs = songs, continuation = nextContinuation)
     }
 
-  suspend fun home(continuation: String? = null, browseId: String = "FEmusic_home", params: String? = null): Result<HomePage> =
-    runCatching {
-      if (continuation != null) {
-        return@runCatching homeContinuation(continuation).getOrThrow()
-      }
-
-      val response =
-        innerTube
-          .browse(WEB_REMIX, browseId = browseId, params = params)
-          .body<BrowseResponse>()
-      val continuation =
-        response.contents
-          ?.singleColumnBrowseResultsRenderer
-          ?.tabs
-          ?.firstOrNull()
-          ?.tabRenderer
-          ?.content
-          ?.sectionListRenderer
-          ?.continuations
-          ?.getContinuation()
-      val sectionListRender =
-        response.contents
-          ?.singleColumnBrowseResultsRenderer
-          ?.tabs
-          ?.firstOrNull()
-          ?.tabRenderer
-          ?.content
-          ?.sectionListRenderer
-      val sections =
-        sectionListRender
-          ?.contents
-          .orEmpty()
-          .mapNotNull { it.musicCarouselShelfRenderer }
-          .mapNotNull { HomePage.Section.fromMusicCarouselShelfRenderer(it) }
-          .toMutableList()
-      val chips =
-        sectionListRender?.header?.chipCloudRenderer?.chips?.mapNotNull {
-          HomePage.Chip.fromChipCloudChipRenderer(it)
-        }
-      HomePage(chips, sections, continuation).filterBlockedArtists()
+  suspend fun home(
+    continuation: String? = null,
+    browseId: String = "FEmusic_home",
+    params: String? = null
+  ): Result<HomePage> = runCatching {
+    if (continuation != null) {
+      return@runCatching homeContinuation(continuation).getOrThrow()
     }
+
+    val response =
+      innerTube.browse(WEB_REMIX, browseId = browseId, params = params).body<BrowseResponse>()
+    val continuation =
+      response.contents
+        ?.singleColumnBrowseResultsRenderer
+        ?.tabs
+        ?.firstOrNull()
+        ?.tabRenderer
+        ?.content
+        ?.sectionListRenderer
+        ?.continuations
+        ?.getContinuation()
+    val sectionListRender =
+      response.contents
+        ?.singleColumnBrowseResultsRenderer
+        ?.tabs
+        ?.firstOrNull()
+        ?.tabRenderer
+        ?.content
+        ?.sectionListRenderer
+    val sections =
+      sectionListRender
+        ?.contents
+        .orEmpty()
+        .mapNotNull { it.musicCarouselShelfRenderer }
+        .mapNotNull { HomePage.Section.fromMusicCarouselShelfRenderer(it) }
+        .toMutableList()
+    val chips =
+      sectionListRender?.header?.chipCloudRenderer?.chips?.mapNotNull {
+        HomePage.Chip.fromChipCloudChipRenderer(it)
+      }
+    HomePage(chips, sections, continuation).filterBlockedArtists()
+  }
 
   private suspend fun homeContinuation(continuation: String): Result<HomePage> = runCatching {
     val response = innerTube.browse(WEB_REMIX, continuation = continuation).body<BrowseResponse>()
@@ -1864,6 +1872,110 @@ object YouTube {
         endpoint = endpoint
       )
     }
+
+  suspend fun fetchTasteSignals(videoId: String): Result<TasteSignals> = runCatching {
+    val response =
+      innerTube
+        .next(
+          WEB_REMIX,
+          videoId = videoId,
+          playlistId = null,
+          playlistSetVideoId = null,
+          index = null,
+          params = null,
+        )
+        .body<NextResponse>()
+    parseTasteSignals(videoId, response)
+  }
+
+  fun parseTasteSignals(videoId: String, response: NextResponse): TasteSignals {
+    val moodKeywords = setOf(
+      "chill", "relax", "relaxing", "workout", "fitness", "focus", "study", "party",
+      "dance", "club", "sleep", "sad", "heartbreak", "happy", "feel good", "energetic",
+      "energy", "romance", "romantic", "commute", "drive", "driving", "dark", "deep cuts",
+      "familiar", "discover", "upbeat", "peaceful", "calm", "hype", "intense", "late night"
+    )
+    val genreKeywords = setOf(
+      "pop", "rock", "hip hop", "hip-hop", "rap", "r&b", "rnb", "soul", "indie", "alternative",
+      "electronic", "edm", "metal", "punk", "jazz", "blues", "country", "folk",
+      "classical", "latin", "reggae", "ambient", "acoustic", "lo-fi", "lofi", "k-pop", "kpop",
+      "j-pop", "jpop", "soundtrack", "trap", "house", "techno", "funk", "disco", "synthwave",
+      "afrobeats", "reggaeton", "heavy metal", "hard rock", "classic rock", "folk rock"
+    )
+
+    val extractedStrings = mutableListOf<String>()
+
+    val tabs = response.contents.singleColumnMusicWatchNextResultsRenderer
+      ?.tabbedRenderer
+      ?.watchNextTabbedResultsRenderer
+      ?.tabs
+      .orEmpty()
+
+    for (tab in tabs) {
+      val content = tab.tabRenderer.content ?: continue
+
+      // Chips from SectionListRenderer header
+      content.sectionListRenderer?.header?.chipCloudRenderer?.chips?.forEach { chip ->
+        chip.chipCloudChipRenderer.text?.runs?.forEach { run ->
+          if (run.text.isNotBlank()) extractedStrings.add(run.text.trim())
+        }
+      }
+
+      // Shelf titles and items
+      content.sectionListRenderer?.contents?.forEach { c ->
+        c.musicShelfRenderer?.title?.runs?.forEach { run ->
+          if (run.text.isNotBlank()) extractedStrings.add(run.text.trim())
+        }
+        c.musicShelfRenderer?.contents?.forEach { shelfContent ->
+          shelfContent.musicResponsiveListItemRenderer?.flexColumns?.forEach { flexCol ->
+            flexCol.musicResponsiveListItemFlexColumnRenderer.text?.runs?.forEach { run ->
+              if (run.text.isNotBlank()) extractedStrings.add(run.text.trim())
+            }
+          }
+        }
+        c.musicCarouselShelfRenderer?.header?.musicCarouselShelfBasicHeaderRenderer?.title?.runs?.forEach { run ->
+          if (run.text.isNotBlank()) extractedStrings.add(run.text.trim())
+        }
+      }
+
+      // Subtitle runs from Queue header
+      content.musicQueueRenderer?.header?.musicQueueHeaderRenderer?.subtitle?.runs?.forEach { run ->
+        if (run.text.isNotBlank()) extractedStrings.add(run.text.trim())
+      }
+    }
+
+    val genres = mutableListOf<String>()
+    val moodTags = mutableListOf<String>()
+
+    for (raw in extractedStrings) {
+      val lower = raw.lowercase()
+      var matched = false
+      for (genre in genreKeywords) {
+        if (lower == genre || "\\b${Regex.escape(genre)}\\b".toRegex().containsMatchIn(lower)) {
+          genres.add(genre)
+          matched = true
+        }
+      }
+      for (mood in moodKeywords) {
+        if (lower == mood || "\\b${Regex.escape(mood)}\\b".toRegex().containsMatchIn(lower)) {
+          moodTags.add(mood)
+          matched = true
+        }
+      }
+      if (!matched && lower.length in 3..25 && !lower.contains("http")) {
+        if (lower.contains("mix") || lower.contains("radio") || lower.contains("station")) {
+          val cleaned = lower.replace("mix", "").replace("radio", "").replace("station", "").trim()
+          if (cleaned.isNotBlank()) genres.add(cleaned)
+        }
+      }
+    }
+
+    return TasteSignals(
+      videoId = videoId,
+      genres = genres.distinct(),
+      moodTags = moodTags.distinct(),
+    )
+  }
 
   suspend fun lyrics(endpoint: BrowseEndpoint): Result<String?> = runCatching {
     val response =

@@ -25,6 +25,8 @@ import echo.music.iad1tya.constants.HideYoutubeShortsKey
 import echo.music.iad1tya.constants.InnerTubeCookieKey
 import echo.music.iad1tya.constants.QuickPicks
 import echo.music.iad1tya.constants.QuickPicksKey
+import echo.music.iad1tya.constants.RecommendationSourceKey
+import echo.music.iad1tya.constants.RecommendationSource
 import echo.music.iad1tya.db.MusicDatabase
 import echo.music.iad1tya.db.entities.Album
 import echo.music.iad1tya.db.entities.LocalItem
@@ -62,6 +64,7 @@ data class DailyDiscoverItem(
 
 data class CommunityPlaylistItem(val playlist: PlaylistItem, val songs: List<SongItem>)
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class HomeViewModel
 @Inject
@@ -69,6 +72,7 @@ constructor(
   @ApplicationContext val context: Context,
   val database: MusicDatabase,
   val syncUtils: SyncUtils,
+  val loadSpotifyRecommendationsUseCase: com.music.echo.spotify.LoadSpotifyRecommendationsUseCase,
 ) : ViewModel() {
   val isRefreshing = MutableStateFlow(false)
   val isLoading = MutableStateFlow(false)
@@ -328,9 +332,16 @@ constructor(
         val combined =
           (relatedSongs + forgotten + ytSimilarSongs).distinctBy { it.id }.shuffled().take(20)
 
-        quickPicks.value = combined
-          .ifEmpty { relatedSongs.shuffled().take(20) }
-          .ifEmpty { database.songs(echo.music.iad1tya.constants.SongSortType.CREATE_DATE, true).first().shuffled().take(20) }
+        quickPicks.value =
+          combined
+            .ifEmpty { relatedSongs.shuffled().take(20) }
+            .ifEmpty {
+              database
+                .songs(echo.music.iad1tya.constants.SongSortType.CREATE_DATE, true)
+                .first()
+                .shuffled()
+                .take(20)
+            }
       }
       QuickPicks.LAST_LISTEN -> {
         val song = database.events().first().firstOrNull()?.song
@@ -344,8 +355,14 @@ constructor(
               .take(20)
         } else {
           val fallbackSongs = database.quickPicks().first().filterVideoSongs(hideVideoSongs)
-          quickPicks.value = fallbackSongs.shuffled().take(20)
-            .ifEmpty { database.songs(echo.music.iad1tya.constants.SongSortType.CREATE_DATE, true).first().shuffled().take(20) }
+          quickPicks.value =
+            fallbackSongs.shuffled().take(20).ifEmpty {
+              database
+                .songs(echo.music.iad1tya.constants.SongSortType.CREATE_DATE, true)
+                .first()
+                .shuffled()
+                .take(20)
+            }
         }
       }
     }
@@ -477,6 +494,26 @@ constructor(
     val hideExplicit = context.dataStore.get(HideExplicitKey, false)
     val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false)
     val fromTimeStamp = System.currentTimeMillis() - 86400000L * 7 * 2
+
+            val recommendationSource =
+                context.dataStore.data.first()[RecommendationSourceKey]
+                    .toEnum(RecommendationSource.YOUTUBE)
+
+            if (recommendationSource == RecommendationSource.SPOTIFY) {
+                val spotifyRecs = try {
+                        loadSpotifyRecommendationsUseCase(
+                            hideExplicit = hideExplicit,
+                            fromTimeStamp = fromTimeStamp,
+                        )
+                    } catch (e: Exception) { null }
+
+                if (!spotifyRecs.isNullOrEmpty()) {
+                    similarRecommendations.value = spotifyRecs.shuffled()
+                    // updateAllYtItems()
+                    return
+                }
+            }
+
 
     coroutineScope {
       val artistDeferreds =
@@ -690,7 +727,9 @@ constructor(
       val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false)
       val hideYoutubeShorts = context.dataStore.get(HideYoutubeShortsKey, false)
       val browseId = chip.endpoint?.browseId ?: "FEmusic_home"
-      val nextSections = YouTube.home(browseId = browseId, params = chip.endpoint?.params).getOrNull() ?: return@launch
+      val nextSections =
+        YouTube.home(browseId = browseId, params = chip.endpoint?.params).getOrNull()
+          ?: return@launch
 
       homePage.value =
         nextSections.copy(

@@ -3,9 +3,9 @@ package echo.music.iad1tya.ui.screens.equalizer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import echo.music.iad1tya.eq.EqualizerService
-import echo.music.iad1tya.eq.data.EQProfileRepository
-import echo.music.iad1tya.eq.data.ParametricEQParser
+import echo.music.dsp.controller.DspController
+import echo.music.dsp.core.parser.ParametricEQParser
+import echo.music.dsp.data.EQProfileRepository
 import java.io.InputStream
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +19,7 @@ class EQViewModel
 @Inject
 constructor(
   private val eqProfileRepository: EQProfileRepository,
-  private val equalizerService: EqualizerService
+  private val dspController: DspController
 ) : ViewModel() {
 
   private val _state = MutableStateFlow(EQState())
@@ -49,13 +49,13 @@ constructor(
     viewModelScope.launch {
       if (profileId == null) {
 
-        equalizerService.disable()
+        dspController.disableEqualizer()
         eqProfileRepository.setActiveProfile(null)
       } else {
 
         val profile = _state.value.profiles.find { it.id == profileId }
         if (profile != null) {
-          val result = equalizerService.applyProfile(profile)
+          val result = dspController.applyProfile(profile)
           result
             .onSuccess { eqProfileRepository.setActiveProfile(profileId) }
             .onFailure { e -> _state.update { it.copy(error = e.message ?: "Unknown error") } }

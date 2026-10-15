@@ -10,10 +10,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +43,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -85,10 +89,6 @@ fun FloatingMiniPlayer(
   val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
   val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
   val context = LocalContext.current
-  val thumbnailUrl = mediaMetadata?.thumbnailUrl
-  val thumbnailRequest = remember(context, thumbnailUrl) {
-    ImageRequest.Builder(context).data(thumbnailUrl).crossfade(true).build()
-  }
 
   val swipeSensitivity by rememberPreference(SwipeSensitivityKey, 0.73f)
   val swipeThumbnailPref by rememberPreference(SwipeThumbnailKey, true)
@@ -113,6 +113,38 @@ fun FloatingMiniPlayer(
   val artSize = if (isInline) 32.dp else 44.dp
   val artCornerRadius = if (isInline) 8.dp else 10.dp
   val controlSize = if (isInline) 32.dp else 40.dp
+
+  val currentItem = playerConnection.player.currentMediaItem
+  val resolvedTitle =
+    mediaMetadata?.title?.takeIf { it.isNotBlank() }
+      ?: currentItem?.mediaMetadata?.title?.toString()?.takeIf { it.isNotBlank() }
+      ?: currentItem?.mediaMetadata?.displayTitle?.toString()?.takeIf { it.isNotBlank() }
+      ?: ""
+
+  val resolvedArtist =
+    mediaMetadata?.artists?.joinToString { it.name }?.takeIf { it.isNotBlank() }
+      ?: currentItem?.mediaMetadata?.artist?.toString()?.takeIf { it.isNotBlank() }
+      ?: currentItem?.mediaMetadata?.albumArtist?.toString()?.takeIf { it.isNotBlank() }
+      ?: ""
+
+  val resolvedArtwork =
+    mediaMetadata?.thumbnailUrl?.takeIf { it.isNotBlank() }
+      ?: currentItem?.mediaMetadata?.artworkUri?.toString()
+      ?: currentItem?.mediaMetadata?.extras?.getString("artwork_uri")
+
+  // Crossfade artwork changes; built from the resolved artwork so the upstream
+  // player-metadata fallbacks (and the placeholder/error drawables) still apply.
+  val artworkRequest =
+    remember(context, resolvedArtwork) {
+      ImageRequest.Builder(context).data(resolvedArtwork).crossfade(true).build()
+    }
+
+  val effectiveContentColor =
+    if (contentColor.isSpecified && contentColor != Color.Transparent) {
+      contentColor
+    } else {
+      if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) Color.Black else Color.White
+    }
 
   // iOS 26 style press response: the whole glass pill grows slightly while touched.
   val pressInteractionSource = remember { MutableInteractionSource() }
@@ -213,55 +245,63 @@ fun FloatingMiniPlayer(
           ),
     ) {
       AsyncImage(
-        model = thumbnailRequest,
+        model = artworkRequest,
+        placeholder = painterResource(R.drawable.music_note),
+        error = painterResource(R.drawable.music_note),
+        fallback = painterResource(R.drawable.music_note),
         contentDescription = null,
         contentScale = ContentScale.Crop,
-        modifier = Modifier.size(artSize).clip(RoundedCornerShape(artCornerRadius)),
+        modifier =
+          Modifier.size(artSize)
+            .clip(RoundedCornerShape(artCornerRadius))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
       )
 
       Spacer(Modifier.width(if (isInline) 8.dp else 12.dp))
 
       if (isInline) {
         AnimatedContent(
-          targetState = mediaMetadata,
+          targetState = resolvedTitle,
           modifier = Modifier.weight(1f),
           transitionSpec = {
             fadeIn(tween(durationMillis = 180)) togetherWith fadeOut(tween(durationMillis = 120))
           },
           label = "floatingMiniPlayerInlineMetadata",
-        ) { metadata ->
+        ) { title ->
           Text(
-            text = metadata?.title.orEmpty(),
+            text = title,
             style = MaterialTheme.typography.bodySmall,
-            color = contentColor,
+            color = effectiveContentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
         }
       } else {
         AnimatedContent(
-          targetState = mediaMetadata,
+          targetState = resolvedTitle to resolvedArtist,
           modifier = Modifier.weight(1f),
           transitionSpec = {
             fadeIn(tween(durationMillis = 180)) togetherWith fadeOut(tween(durationMillis = 120))
           },
           label = "floatingMiniPlayerMetadata",
-        ) { metadata ->
-          Column {
+        ) { (title, artist) ->
+          Column(verticalArrangement = Arrangement.Center) {
             Text(
-              text = metadata?.title.orEmpty(),
+              text = title,
               style = MaterialTheme.typography.bodyMedium,
-              color = contentColor,
+              color = effectiveContentColor,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
-            Text(
-              text = metadata?.artists?.joinToString { it.name }.orEmpty(),
-              style = MaterialTheme.typography.bodySmall,
-              color = contentColor.copy(alpha = 0.7f),
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
+            if (artist.isNotBlank()) {
+              Text(
+                text = artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = effectiveContentColor.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
           }
         }
       }
@@ -280,7 +320,7 @@ fun FloatingMiniPlayer(
           Icon(
             painter = painterResource(if (playing) R.drawable.pause else R.drawable.play),
             contentDescription = null,
-            tint = contentColor,
+            tint = effectiveContentColor,
           )
         }
       }
@@ -293,7 +333,7 @@ fun FloatingMiniPlayer(
           Icon(
             painter = painterResource(R.drawable.skip_next),
             contentDescription = null,
-            tint = contentColor,
+            tint = effectiveContentColor,
           )
         }
       }

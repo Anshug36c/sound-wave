@@ -4,14 +4,22 @@ on:
   push:
     branches:
       - main
+      - "sync/**"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: Build FOSS universal debug APK
+    name: Test and build FOSS universal debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -28,7 +36,15 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install required Android packages
-        run: sdkmanager "platforms;android-37.0" "ndk;27.0.12077973"
+        # ndkVersion and the CMake version are pinned by app/usbaudio build.gradle.kts.
+        # The usbaudio module (bit-perfect USB-DAC output) needs a native toolchain, so
+        # cmake;3.22.1 must be present or externalNativeBuild fails.
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install \
+            "platforms;android-37.0" \
+            "ndk;28.2.13676358" \
+            "cmake;3.22.1"
 
       - name: Create CI debug keystore
         run: |
@@ -43,9 +59,23 @@ jobs:
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
-      - name: Build APK
+      - name: Run unit tests
+        # --continue so a single failing module does not hide the others.
+        # The :lyrics module ships no unit tests in Soundwave (the upstream AI
+        # lyric-translation providers and their tests are not part of this build).
         run: |
           chmod +x gradlew
+          ./gradlew --no-daemon --continue \
+            :domain:testDebugUnitTest \
+            :metadata:testDebugUnitTest \
+            :dsp-core:testDebugUnitTest \
+            :audio-dsp:testDebugUnitTest \
+            :playback:testDebugUnitTest \
+            :core:testDebugUnitTest \
+            :app:testUniversalFossDebugUnitTest
+
+      - name: Build APK
+        run: |
           ./gradlew --no-daemon :app:assembleUniversalFossDebug
 
       - name: Upload APK artifact
@@ -54,4 +84,15 @@ jobs:
           name: soundwave-foss-universal-debug
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          if-no-files-found: ignore
           retention-days: 14

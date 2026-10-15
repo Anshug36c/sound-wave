@@ -1,10 +1,10 @@
 package echo.music.iad1tya.ui.component
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -184,9 +184,9 @@ fun ListDialog(
       ) {
         if (title != null) {
           Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)
+            modifier =
+              Modifier.fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)
           ) {
             title()
           }
@@ -232,6 +232,8 @@ fun TextFieldDialog(
   isInputValid: (String) -> Boolean = { it.isNotEmpty() },
   keyboardType: KeyboardType = KeyboardType.Text,
   onDone: (String) -> Unit = {},
+  onReset: (() -> Unit)? = null,
+  resetText: String? = null,
   textFields: List<Pair<String, TextFieldValue>>? = null,
   onTextFieldsChange: ((Int, TextFieldValue) -> Unit)? = null,
   onDoneMultiple: ((List<String>) -> Unit)? = null,
@@ -256,6 +258,17 @@ fun TextFieldDialog(
     icon = icon,
     title = title,
     buttons = {
+      if (onReset != null) {
+        TextButton(
+          onClick = {
+            if (autoDismiss) onDismiss()
+            onReset()
+          }
+        ) {
+          Text(text = resetText ?: stringResource(R.string.clear))
+        }
+      }
+
       TextButton(onClick = onDismiss) { Text(text = stringResource(android.R.string.cancel)) }
 
       val isValid =

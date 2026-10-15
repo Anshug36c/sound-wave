@@ -112,6 +112,12 @@ fun getAllSearchableSettings(): List<SearchableSetting> {
       "settings/player"
     ),
     SearchableSetting(
+      stringResource(R.string.varispeed),
+      stringResource(R.string.varispeed_description),
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
       stringResource(R.string.audio_offload),
       stringResource(R.string.audio_offload_desc),
       "Player and audio",
@@ -1511,6 +1517,12 @@ fun getAllSearchableSettings(): List<SearchableSetting> {
       "settings/appearance"
     ),
     SearchableSetting(
+      stringResource(R.string.wavy_play_pause),
+      stringResource(R.string.wavy_play_pause_desc),
+      "Appearance",
+      "settings/appearance"
+    ),
+    SearchableSetting(
       stringResource(R.string.yt_sync),
       stringResource(R.string.yt_sync_desc),
       "Account",
@@ -1727,7 +1739,37 @@ fun getAllSearchableSettings(): List<SearchableSetting> {
       stringResource(R.string.enable_haptics),
       stringResource(R.string.enable_haptics_desc),
       "Appearance",
-      "settings/appearance"
+      "settings/appearance/haptics"
+    ),
+    SearchableSetting(
+      stringResource(R.string.haptics_intensity),
+      stringResource(R.string.haptics_intensity_desc),
+      "Appearance",
+      "settings/appearance/haptics"
+    ),
+    SearchableSetting(
+      stringResource(R.string.haptic_click_feedback),
+      stringResource(R.string.haptic_click_feedback_desc),
+      "Appearance",
+      "settings/appearance/haptics"
+    ),
+    SearchableSetting(
+      stringResource(R.string.haptic_long_press_feedback),
+      stringResource(R.string.haptic_long_press_feedback_desc),
+      "Appearance",
+      "settings/appearance/haptics"
+    ),
+    SearchableSetting(
+      stringResource(R.string.haptic_scroll_edge_feedback),
+      stringResource(R.string.haptic_scroll_edge_feedback_desc),
+      "Appearance",
+      "settings/appearance/haptics"
+    ),
+    SearchableSetting(
+      stringResource(R.string.haptic_slider_feedback),
+      stringResource(R.string.haptic_slider_feedback_desc),
+      "Appearance",
+      "settings/appearance/haptics"
     ),
     SearchableSetting(
       stringResource(R.string.listen_together_username),
@@ -2033,5 +2075,278 @@ fun getAllSearchableSettings(): List<SearchableSetting> {
       "settings/appearance/app_icon"
     ),
 
-      )
+    // --- Settings search index entries synced from Echo-Music v1.4.3 ---
+    // Soundwave omits the upstream About/social/support and AI-provider entries because those
+    // surfaces are not part of this build. Routes below are validated against NavigationBuilder.
+    SearchableSetting(
+      "Show Button 1",
+      "Show Button 1 in Discord Rich Presence",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Button 1 Label",
+      "Label for Button 1",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Button 1 URL Source",
+      "URL Source for Button 1",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Button 1 Custom URL",
+      "Custom URL for Button 1",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Show Button 2",
+      "Show Button 2 in Discord Rich Presence",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Button 2 Label",
+      "Label for Button 2",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Button 2 URL Source",
+      "URL Source for Button 2",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Button 2 Custom URL",
+      "Custom URL for Button 2",
+      "Discord RPC",
+      "settings/discord/experimental"
+    ),
+    SearchableSetting(
+      "Local Backup",
+      "Create a local backup",
+      "Backup and Restore",
+      "settings/backup_restore"
+    ),
+    SearchableSetting(
+      "Import",
+      "Import a local backup",
+      "Backup and Restore",
+      "settings/backup_restore"
+    ),
+    SearchableSetting(
+      "Import from Spotify",
+      "Import playlists from Spotify",
+      "Backup and Restore",
+      "settings/backup_restore"
+    ),
+    SearchableSetting(
+      "Import 'm3u' Playlist",
+      "Import an m3u playlist",
+      "Backup and Restore",
+      "settings/backup_restore"
+    ),
+    SearchableSetting(
+      "Import 'csv' Playlist",
+      "Import a csv playlist",
+      "Backup and Restore",
+      "settings/backup_restore"
+    ),
+    SearchableSetting(
+      "Blocked Artists",
+      "Manage blocked artists",
+      "Content",
+      "blocked_artists"
+    ),
+    SearchableSetting(
+      "Add another account",
+      "Add a new account",
+      "Account",
+      "settings/account"
+    ),
+    SearchableSetting(
+      "Spotify",
+      "Connect to Spotify",
+      "Account",
+      "settings/account"
+    ),
+    SearchableSetting(
+      "Supported Links",
+      "Manage supported links",
+      "Settings",
+      "settings"
+    ),
+    SearchableSetting(
+      stringResource(R.string.haptics),
+      stringResource(R.string.haptics_desc),
+      "Appearance",
+      "settings/appearance/haptics"
+    ),
+    SearchableSetting(
+      stringResource(R.string.liquid_glass_settings),
+      stringResource(R.string.liquid_glass_settings_desc),
+      "Appearance",
+      "settings/appearance/liquidglass"
+    ),
+    SearchableSetting(
+      stringResource(R.string.app_font),
+      "Choose the application font",
+      "Appearance",
+      "settings/appearance/font"
+    ),
+    SearchableSetting(
+      "Data Saver Mode (Beta)",
+      "Low quality streaming for data saving",
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
+      "Download with metadata",
+      "Downloads lyrics when downloading a song",
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
+      "Playback Engine",
+      "Choose the playback engine",
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
+      "Bit-Perfect USB-DAC Output",
+      "Direct UAC1/UAC2 driver bypassing Android OS mixer",
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
+      "Preload Next Song",
+      "Cache the next song for gapless playback",
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
+      "Preload Limit",
+      "Limit for preloaded songs",
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
+      "Preload Lyrics",
+      "Also cache lyrics for the preloaded songs",
+      "Player and audio",
+      "settings/player"
+    ),
+    SearchableSetting(
+      "Show Music Art",
+      "Show album art in ambient mode",
+      "Appearance",
+      "ambient_settings"
+    ),
+    SearchableSetting(
+      "Spacing Between Art and Lyrics",
+      "Adjust spacing between art and lyrics",
+      "Appearance",
+      "ambient_settings"
+    ),
+    SearchableSetting(
+      "Lyrics Font Size",
+      "Adjust lyrics font size",
+      "Appearance",
+      "ambient_settings"
+    ),
+    SearchableSetting(
+      "Lyrics Line Spacing",
+      "Adjust lyrics line spacing",
+      "Appearance",
+      "ambient_settings"
+    ),
+    SearchableSetting(
+      "Lyrics Animation Style",
+      "Choose lyrics animation style",
+      "Appearance",
+      "ambient_settings"
+    ),
+    SearchableSetting(
+      "Ambient Mode Settings",
+      "Configure ambient mode",
+      "Appearance",
+      "ambient_settings"
+    ),
+    SearchableSetting(
+      "Add Custom Server",
+      "Add a custom extension server",
+      "Extensions",
+      "settings/extensions"
+    ),
+    SearchableSetting(
+      "Add Extension",
+      "Add a new extension",
+      "Extensions",
+      "settings/extensions"
+    ),
+    SearchableSetting(
+      "Extension Sources",
+      "Manage extension sources",
+      "Extensions",
+      "settings/extensions"
+    ),
+    SearchableSetting(
+      "Force Opus Audio (itag 251)",
+      "Force high quality Opus audio",
+      "Content",
+      "settings/content"
+    ),
+    SearchableSetting(
+      "Enable HTTP/3 (Cronet)",
+      "Enable experimental HTTP/3 support",
+      "Content",
+      "settings/content"
+    ),
+    SearchableSetting(
+      "Suggestions Region",
+      "Select region for suggestions",
+      "Content",
+      "settings/content"
+    ),
+    SearchableSetting(
+      stringResource(R.string.recommendation_source),
+      "Select the source for content recommendations",
+      "Content",
+      "settings/content"
+    ),
+    SearchableSetting(
+      "Speed Dial",
+      "Configure speed dial",
+      "Content",
+      "settings/content"
+    ),
+    SearchableSetting(
+      stringResource(R.string.liquid_glass),
+      stringResource(R.string.liquid_glass_desc),
+      "Appearance",
+      "settings/appearance"
+    ),
+    SearchableSetting(
+      "Apple Music Inspired",
+      "Apple Music inspired UI",
+      "Appearance",
+      "settings/appearance"
+    ),
+    SearchableSetting(
+      "Hide volume slider",
+      "Hide volume slider in player",
+      "Appearance",
+      "settings/appearance"
+    ),
+    SearchableSetting(
+      "Show codec on player",
+      "Show audio codec information",
+      "Appearance",
+      "settings/appearance"
+    ),
+  )
 }

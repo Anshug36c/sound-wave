@@ -40,6 +40,12 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,6 +58,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -64,7 +72,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
@@ -80,12 +90,16 @@ import echo.music.iad1tya.constants.ExportDirectoryUriKey
 import echo.music.iad1tya.constants.ExportedSongIdsKey
 import echo.music.iad1tya.constants.ExportingSongIdsKey
 import echo.music.iad1tya.constants.ListItemHeight
+import echo.music.iad1tya.constants.VarispeedKey
+
+import echo.music.iad1tya.constants.QueueEditLockKey
 import echo.music.iad1tya.constants.ShowLyricsOnPlayerKey
 import echo.music.iad1tya.listentogether.ConnectionState
 import echo.music.iad1tya.listentogether.ListenTogetherEvent
 import echo.music.iad1tya.models.MediaMetadata
 import echo.music.iad1tya.playback.ExoDownloadService
 import echo.music.iad1tya.ui.component.BottomSheetState
+import echo.music.iad1tya.ui.component.DefaultDialog
 import echo.music.iad1tya.ui.component.ListDialog
 import echo.music.iad1tya.ui.component.Material3MenuGroup
 import echo.music.iad1tya.ui.component.Material3MenuItemData
@@ -104,7 +118,10 @@ fun PlayerMenu(
   navController: NavController,
   playerBottomSheetState: BottomSheetState,
   isQueueTrigger: Boolean? = false,
+  isQueueLocked: Boolean? = null,
+  inSelectMode: Boolean = false,
   onShowDetailsDialog: () -> Unit,
+  onClearQueue: (() -> Unit)? = null,
   onDismiss: () -> Unit,
 ) {
   mediaMetadata ?: return
@@ -156,6 +173,9 @@ fun PlayerMenu(
         null
       }
     }
+    val varispeedMode by rememberPreference(VarispeedKey, defaultValue = false)
+    var showSpeedDialog by rememberSaveable { mutableStateOf(false) }
+
   val isCasting by castHandler?.isCasting?.collectAsState() ?: remember { mutableStateOf(false) }
   val castVolume by
     castHandler?.castVolume?.collectAsState() ?: remember { mutableFloatStateOf(1f) }
@@ -244,6 +264,41 @@ fun PlayerMenu(
     )
   }
 
+  var showClearQueueDialog by rememberSaveable { mutableStateOf(false) }
+  if (showClearQueueDialog) {
+    DefaultDialog(
+      onDismiss = { showClearQueueDialog = false },
+      icon = {
+        Icon(
+          painter = painterResource(R.drawable.clear_all),
+          contentDescription = null,
+          modifier = Modifier.size(24.dp)
+        )
+      },
+      title = { Text(stringResource(R.string.clear_queue)) },
+      buttons = {
+        TextButton(onClick = { showClearQueueDialog = false }) {
+          Text(stringResource(R.string.cancel))
+        }
+        Spacer(Modifier.width(8.dp))
+        Button(
+          onClick = {
+            showClearQueueDialog = false
+            onDismiss()
+            playerConnection.clearQueue()
+          }
+        ) {
+          Text(stringResource(R.string.clear))
+        }
+      }
+    ) {
+      Text(
+        text = stringResource(R.string.clear_queue_confirm),
+        style = MaterialTheme.typography.bodyMedium
+      )
+    }
+  }
+
   var showListenTogetherDialog by rememberSaveable { mutableStateOf(false) }
 
   val listenTogetherManager = LocalListenTogetherManager.current
@@ -305,7 +360,176 @@ fun PlayerMenu(
     }
   }
 
+  var showSongDnaDialog by rememberSaveable { mutableStateOf(false) }
+  var dnaAlbum by rememberSaveable { mutableStateOf("Fetching...") }
+  var dnaMeaning by rememberSaveable { mutableStateOf("Fetching info from Wikipedia...") }
+  var dnaBio by rememberSaveable { mutableStateOf("Fetching biography...") }
+  var dnaFetched by rememberSaveable { mutableStateOf(false) }
+
+  if (showSongDnaDialog) {
+    LaunchedEffect(mediaMetadata.id) {
+      if (!dnaFetched) {
+         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val artistName = mediaMetadata.artists.firstOrNull()?.name ?: ""
+                val songTitle = mediaMetadata.title
+                val query = java.net.URLEncoder.encode("$artistName $songTitle", "UTF-8")
+                val searchUrl = java.net.URL("https://genius.com/api/search/multi?q=$query")
+                val searchJson = searchUrl.readText()
+                val searchRoot = org.json.JSONObject(searchJson).getJSONObject("response")
+                val sections = searchRoot.getJSONArray("sections")
+                var songId = -1
+                for (i in 0 until sections.length()) {
+                    val sec = sections.getJSONObject(i)
+                    if (sec.getString("type") == "top_hit" || sec.getString("type") == "song") {
+                        val hits = sec.getJSONArray("hits")
+                        if (hits.length() > 0) {
+                            songId = hits.getJSONObject(0).getJSONObject("result").getInt("id")
+                            break
+                        }
+                    }
+                }
+                if (songId == -1) {
+                    dnaAlbum = mediaMetadata.album?.title ?: "Unknown"
+                    dnaMeaning = "Meaning not found."
+                    dnaBio = "Biography not found."
+                } else {
+                    val songUrl = java.net.URL("https://genius.com/api/songs/$songId?text_format=plain")
+                    val songJson = songUrl.readText()
+                    val songObj = org.json.JSONObject(songJson).getJSONObject("response").getJSONObject("song")
+                    
+                    if (songObj.has("album") && !songObj.isNull("album")) {
+                        dnaAlbum = songObj.getJSONObject("album").getString("name")
+                    } else {
+                        dnaAlbum = mediaMetadata.album?.title ?: "Unknown"
+                    }
+                    
+                    dnaMeaning = "Info not found." // Reset so Wikipedia can override it
+                    
+                    var artistId = -1
+                    if (songObj.has("primary_artist") && !songObj.isNull("primary_artist")) {
+                        artistId = songObj.getJSONObject("primary_artist").getInt("id")
+                    }
+                    
+                    if (artistId != -1) {
+                        val artistUrl = java.net.URL("https://genius.com/api/artists/$artistId?text_format=plain")
+                        val artistJson = artistUrl.readText()
+                        val artistObj = org.json.JSONObject(artistJson).getJSONObject("response").getJSONObject("artist")
+                        if (artistObj.has("description") && !artistObj.isNull("description")) {
+                            dnaBio = artistObj.getJSONObject("description").getString("plain")
+                            if (dnaBio == "?") dnaBio = "Biography not found."
+                        } else {
+                            dnaBio = "Biography not found."
+                        }
+                    } else {
+                        dnaBio = "Biography not found."
+                    }
+                }
+                
+                // --- WIKIPEDIA FALLBACKS ---
+                
+                // 1. Wikipedia exclusively for About the Song
+                if (true) {
+                    dnaMeaning = "Info not found." 
+                    try {
+                        val wpQuery = java.net.URLEncoder.encode(songTitle + " " + dnaAlbum, "UTF-8")
+                        val wpSearchUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$wpQuery&utf8=&format=json")
+                        val wpSearchRoot = org.json.JSONObject(wpSearchUrl.readText()).getJSONObject("query")
+                        val wpSearchList = wpSearchRoot.getJSONArray("search")
+                        if (wpSearchList.length() > 0) {
+                            val wpTitle = wpSearchList.getJSONObject(0).getString("title")
+                            val wpTitleEnc = java.net.URLEncoder.encode(wpTitle, "UTF-8")
+                            val wpExtractUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exsentences=4&exlimit=1&titles=$wpTitleEnc&explaintext=1&format=json")
+                            val wpExtractRoot = org.json.JSONObject(wpExtractUrl.readText()).getJSONObject("query").getJSONObject("pages")
+                            val firstKey = wpExtractRoot.keys().next()
+                            val extract = wpExtractRoot.getJSONObject(firstKey).optString("extract", "")
+                            if (extract.isNotBlank() && !extract.contains("may refer to")) {
+                                dnaMeaning = extract
+                            }
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+                
+                // 2. Wikipedia fallback for Artist Bio
+                if (dnaBio == "Biography not found." && artistName.isNotBlank()) {
+                    try {
+                        val wpQuery = java.net.URLEncoder.encode(artistName, "UTF-8")
+                        val wpSearchUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$wpQuery&utf8=&format=json")
+                        val wpSearchRoot = org.json.JSONObject(wpSearchUrl.readText()).getJSONObject("query")
+                        val wpSearchList = wpSearchRoot.getJSONArray("search")
+                        if (wpSearchList.length() > 0) {
+                            val wpTitle = wpSearchList.getJSONObject(0).getString("title")
+                            val wpTitleEnc = java.net.URLEncoder.encode(wpTitle, "UTF-8")
+                            val wpExtractUrl = java.net.URL("https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exsentences=4&exlimit=1&titles=$wpTitleEnc&explaintext=1&format=json")
+                            val wpExtractRoot = org.json.JSONObject(wpExtractUrl.readText()).getJSONObject("query").getJSONObject("pages")
+                            val firstKey = wpExtractRoot.keys().next()
+                            val extract = wpExtractRoot.getJSONObject(firstKey).optString("extract", "")
+                            if (extract.isNotBlank() && !extract.contains("may refer to")) {
+                                dnaBio = extract
+                            }
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                dnaAlbum = mediaMetadata.album?.title ?: "Unknown"
+                dnaMeaning = "Failed to fetch meaning."
+                dnaBio = "Failed to fetch biography."
+            }
+            dnaFetched = true
+         }
+      }
+    }
+
+    DefaultDialog(
+      onDismiss = { showSongDnaDialog = false },
+      icon = {
+        androidx.compose.foundation.Image(
+          painter = painterResource(R.drawable.songdna),
+          contentDescription = null,
+          modifier = Modifier.size(24.dp).clip(androidx.compose.foundation.shape.CircleShape)
+        )
+      },
+      title = {
+        Text("Song DNA", fontWeight = FontWeight.Bold)
+      },
+      buttons = {
+        TextButton(onClick = { showSongDnaDialog = false }) { Text(stringResource(android.R.string.ok)) }
+      }
+    ) {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+      ) {
+        item {
+            Column {
+                Text("Movie / Album", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(dnaAlbum, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        item {
+            Column {
+                Text("About the Song", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(dnaMeaning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        item {
+            Column {
+                Text("About the Artist", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(dnaBio, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+      }
+    }
+  }
+
   var showPitchTempoDialog by rememberSaveable { mutableStateOf(false) }
+
+  if (showSpeedDialog) {
+    SpeedDialog(
+      onDismiss = { showSpeedDialog = false },
+    )
+  }
 
   if (showPitchTempoDialog) {
     TempoPitchDialog(
@@ -480,6 +704,32 @@ fun PlayerMenu(
             }
 
             val isInLibrary = librarySong?.song?.inLibrary != null
+            val infiniteTransition = rememberInfiniteTransition()
+            val animatedColor by infiniteTransition.animateColor(
+                initialValue = MaterialTheme.colorScheme.primary,
+                targetValue = MaterialTheme.colorScheme.tertiary,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(400, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dnaColor"
+            )
+
+            add(
+              Material3MenuItemData(
+                title = { Text(text = "Song DNA", color = animatedColor, fontWeight = FontWeight.Bold) },
+                icon = {
+                  androidx.compose.foundation.Image(
+                    painter = painterResource(R.drawable.songdna),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                  )
+                },
+                onClick = {
+                  showSongDnaDialog = true
+                }
+              )
+            )
             add(
               Material3MenuItemData(
                 title = {
@@ -545,6 +795,44 @@ fun PlayerMenu(
                 }
               )
             )
+
+            val (queueLockedPref) = rememberPreference(QueueEditLockKey, defaultValue = false)
+            val effectiveQueueLocked = isQueueLocked ?: queueLockedPref
+
+            val timeline = playerConnection.player.currentTimeline
+            val currentIdx = playerConnection.player.currentMediaItemIndex
+            val hasUpcomingSongs =
+              !timeline.isEmpty &&
+                currentIdx != C.INDEX_UNSET &&
+                timeline.getNextWindowIndex(
+                  currentIdx,
+                  Player.REPEAT_MODE_OFF,
+                  playerConnection.player.shuffleModeEnabled
+                ) != C.INDEX_UNSET
+            if (
+              !isListenTogetherGuest && !effectiveQueueLocked && !inSelectMode && hasUpcomingSongs
+            ) {
+              add(
+                Material3MenuItemData(
+                  title = { Text(text = stringResource(R.string.clear_queue)) },
+                  icon = {
+                    Icon(
+                      painter = painterResource(R.drawable.clear_all),
+                      contentDescription = null,
+                      modifier = Modifier.size(24.dp)
+                    )
+                  },
+                  onClick = {
+                    if (onClearQueue != null) {
+                      onClearQueue()
+                      onDismiss()
+                    } else {
+                      showClearQueueDialog = true
+                    }
+                  }
+                )
+              )
+            }
           }
       )
     }
@@ -840,7 +1128,7 @@ fun PlayerMenu(
                       modifier = Modifier.size(24.dp)
                     )
                   },
-                  onClick = { showPitchTempoDialog = true }
+                  onClick = { if (!varispeedMode) showPitchTempoDialog = true else showSpeedDialog = true }
                 )
               )
             }
@@ -864,56 +1152,93 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
   val listenTogetherManager = echo.music.iad1tya.LocalListenTogetherManager.current
   val isInRoom = listenTogetherManager?.isInRoom ?: false
 
-  AlertDialog(
-    properties = DialogProperties(usePlatformDefaultWidth = false),
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.tempo_and_pitch)) },
-    dismissButton = {
-      TextButton(
-        onClick = {
-          tempo = 1f
-          transposeValue = 0
-          updatePlaybackParameters()
-        },
+  androidx.compose.ui.window.Dialog(
+    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    onDismissRequest = onDismiss
+  ) {
+    androidx.compose.material3.Card(
+      modifier = Modifier.fillMaxWidth().padding(24.dp),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+      colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface),
+      elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+      Column(
+        modifier = Modifier.padding(24.dp)
       ) {
-        Text(stringResource(R.string.reset))
-      }
-    },
-    confirmButton = {
-      TextButton(
-        onClick = onDismiss,
-      ) {
-        Text(stringResource(android.R.string.ok))
-      }
-    },
-    text = {
-      Column {
-        if (!isInRoom) {
-          ValueAdjuster(
-            icon = R.drawable.speed,
-            currentValue = tempo,
-            values = (0..35).map { round((0.25f + it * 0.05f) * 100) / 100 },
-            onValueUpdate = {
-              tempo = it
-              updatePlaybackParameters()
-            },
-            valueText = { "x$it" },
-            modifier = Modifier.padding(bottom = 12.dp),
-          )
-        }
-        ValueAdjuster(
-          icon = R.drawable.discover_tune,
-          currentValue = transposeValue,
-          values = (-12..12).toList(),
-          onValueUpdate = {
-            transposeValue = it
-            updatePlaybackParameters()
-          },
-          valueText = { "${if (it > 0) "+" else ""}$it" },
+        Text(
+          text = stringResource(R.string.tempo_and_pitch),
+          style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
+          fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+          color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+          modifier = Modifier.padding(bottom = 24.dp)
         )
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          if (!isInRoom) {
+            androidx.compose.material3.Card(
+              shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+              colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh),
+              elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Box(modifier = Modifier.padding(vertical = 12.dp)) {
+                ValueAdjuster(
+                  icon = R.drawable.speed,
+                  currentValue = tempo,
+                  values = (0..35).map { round((0.25f + it * 0.05f) * 100) / 100 },
+                  onValueUpdate = {
+                    tempo = it
+                    updatePlaybackParameters()
+                  },
+                  valueText = { "x$it" }
+                )
+              }
+            }
+          }
+          androidx.compose.material3.Card(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh),
+            elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Box(modifier = Modifier.padding(vertical = 12.dp)) {
+              ValueAdjuster(
+                icon = R.drawable.discover_tune,
+                currentValue = transposeValue,
+                values = (-12..12).toList(),
+                onValueUpdate = {
+                  transposeValue = it
+                  updatePlaybackParameters()
+                },
+                valueText = { "${if (it > 0) "+" else ""}$it" }
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.End
+        ) {
+          TextButton(
+            onClick = {
+              tempo = 1f
+              transposeValue = 0
+              updatePlaybackParameters()
+            }
+          ) {
+            Text(stringResource(R.string.reset))
+          }
+          Spacer(modifier = Modifier.width(8.dp))
+          TextButton(onClick = onDismiss) {
+            Text(stringResource(android.R.string.ok))
+          }
+        }
       }
-    },
-  )
+    }
+  }
 }
 
 @Composable
@@ -926,15 +1251,17 @@ fun <T> ValueAdjuster(
   modifier: Modifier = Modifier,
 ) {
   Row(
-    horizontalArrangement = Arrangement.spacedBy(24.dp),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
     verticalAlignment = Alignment.CenterVertically,
-    modifier = modifier,
+    modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp),
   ) {
     Icon(
       painter = painterResource(icon),
       contentDescription = null,
       modifier = Modifier.size(28.dp),
     )
+
+    Spacer(modifier = Modifier.weight(1f))
 
     IconButton(
       enabled = currentValue != values.first(),
@@ -2031,6 +2358,82 @@ fun ListenTogetherDialog(visible: Boolean, mediaMetadata: MediaMetadata?, onDism
           }
         }
         Spacer(modifier = Modifier.height(16.dp))
+      }
+    }
+  }
+}
+
+@Composable
+fun SpeedDialog(onDismiss: () -> Unit) {
+  val playerConnection = LocalPlayerConnection.current ?: return
+  var speed by remember { mutableFloatStateOf(playerConnection.player.playbackParameters.speed) }
+  val updatePlaybackParameters = {
+    playerConnection.player.playbackParameters = PlaybackParameters(speed, speed)
+  }
+  val listenTogetherManager = echo.music.iad1tya.LocalListenTogetherManager.current
+  val isInRoom = listenTogetherManager?.isInRoom ?: false
+
+  androidx.compose.ui.window.Dialog(
+    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    onDismissRequest = onDismiss
+  ) {
+    androidx.compose.material3.Card(
+      modifier = Modifier.fillMaxWidth().padding(24.dp),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+      colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface),
+      elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+      Column(
+        modifier = Modifier.padding(24.dp)
+      ) {
+        Text(
+          text = stringResource(R.string.speed),
+          style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
+          fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+          color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+          modifier = Modifier.padding(bottom = 24.dp)
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          if (!isInRoom) {
+            androidx.compose.material3.Card(
+              shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+              colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh),
+              elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Box(modifier = Modifier.padding(vertical = 12.dp)) {
+                ValueAdjuster(
+                  icon = R.drawable.speed,
+                  currentValue = speed,
+                  values = (0..35).map { round((0.25f + it * 0.05f) * 100) / 100 },
+                  onValueUpdate = {
+                    speed = it
+                    updatePlaybackParameters()
+                  },
+                  valueText = { "x$it" }
+                )
+              }
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.End
+        ) {
+          TextButton(onClick = {
+            speed = 1f
+            updatePlaybackParameters()
+          }) {
+            Text(stringResource(R.string.reset))
+          }
+          TextButton(onClick = onDismiss) {
+            Text(stringResource(android.R.string.ok))
+          }
+        }
       }
     }
   }

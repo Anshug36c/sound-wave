@@ -46,6 +46,7 @@ import echo.music.iad1tya.ui.menu.CsvColumnMappingDialog
 import echo.music.iad1tya.ui.menu.CsvImportProgressDialog
 import echo.music.iad1tya.ui.menu.LoadingScreen
 import echo.music.iad1tya.ui.utils.backToMain
+import echo.music.iad1tya.utils.launchSafely
 import echo.music.iad1tya.viewmodels.BackupRestoreViewModel
 import echo.music.iad1tya.viewmodels.ConvertedSongLog
 import echo.music.iad1tya.viewmodels.CsvImportState
@@ -158,10 +159,11 @@ fun BackupAndRestore(
                   icon = painterResource(R.drawable.backup),
                   onClick = {
                     val formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
-                    backupLauncher.launch(
+                    backupLauncher.launchSafely(
                       "${context.getString(R.string.app_name)}_${
                                             LocalDateTime.now().format(formatter)
-                                        }.backup"
+                                        }.backup",
+                      context
                     )
                   }
                 ),
@@ -191,24 +193,27 @@ fun BackupAndRestore(
                 Material3SettingsItem(
                   title = { Text("Import from local file") },
                   icon = painterResource(R.drawable.restore),
-                  onClick = { restoreLauncher.launch(arrayOf("application/octet-stream")) }
+                  onClick = {
+                    restoreLauncher.launchSafely(arrayOf("application/octet-stream"), context)
+                  }
                 ),
                 Material3SettingsItem(
                   title = { Text("Import 'm3u' Playlist") },
                   icon = painterResource(R.drawable.playlist_add),
-                  onClick = { importM3uLauncherOnline.launch(arrayOf("audio/*")) }
+                  onClick = { importM3uLauncherOnline.launchSafely(arrayOf("audio/*"), context) }
                 ),
                 Material3SettingsItem(
                   title = { Text("Import 'csv' Playlist") },
                   icon = painterResource(R.drawable.playlist_add),
                   onClick = {
-                    importPlaylistFromCsv.launch(
+                    importPlaylistFromCsv.launchSafely(
                       arrayOf(
                         "text/csv",
                         "text/comma-separated-values",
                         "application/csv",
                         "text/plain"
-                      )
+                      ),
+                      context
                     )
                   }
                 )

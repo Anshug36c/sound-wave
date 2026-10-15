@@ -19,6 +19,7 @@ import echo.music.iad1tya.ui.menu.AlbumMenu
 import echo.music.iad1tya.ui.menu.ArtistMenu
 import echo.music.iad1tya.ui.menu.PlaylistMenu
 import echo.music.iad1tya.ui.menu.YouTubePlaylistMenu
+import echo.music.iad1tya.utils.libraryPlaylistRoute
 import kotlinx.coroutines.CoroutineScope
 
 @Composable
@@ -203,13 +204,15 @@ fun LibraryPlaylistListItem(
     },
     modifier =
       modifier.fillMaxWidth().clickable {
-        if (
-          !playlist.playlist.isEditable &&
-            playlist.songCount == 0 &&
-            playlist.playlist.remoteSongCount != 0
+        navController.navigate(
+          libraryPlaylistRoute(
+            localPlaylistId = playlist.id,
+            browseId = playlist.playlist.browseId,
+            isEditable = playlist.playlist.isEditable,
+            songCount = playlist.songCount,
+            remoteSongCount = playlist.playlist.remoteSongCount,
+          )
         )
-          navController.navigate("online_playlist/${playlist.playlist.browseId}")
-        else navController.navigate("local_playlist/${playlist.id}")
       }
   )
 
@@ -230,13 +233,15 @@ fun LibraryPlaylistGridItem(
         .fillMaxWidth()
         .combinedClickable(
           onClick = {
-            if (
-              !playlist.playlist.isEditable &&
-                playlist.songCount == 0 &&
-                playlist.playlist.remoteSongCount != 0
+            navController.navigate(
+              libraryPlaylistRoute(
+                localPlaylistId = playlist.id,
+                browseId = playlist.playlist.browseId,
+                isEditable = playlist.playlist.isEditable,
+                songCount = playlist.songCount,
+                remoteSongCount = playlist.playlist.remoteSongCount,
+              )
             )
-              navController.navigate("online_playlist/${playlist.playlist.browseId}")
-            else navController.navigate("local_playlist/${playlist.id}")
           },
           onLongClick = {
             menuState.show {

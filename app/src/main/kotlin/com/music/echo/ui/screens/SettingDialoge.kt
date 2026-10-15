@@ -104,6 +104,17 @@ fun SettingDialoge(
                 }
               )
             )
+            add(
+              Material3SettingsItem(
+                title = { Text("Extensions") },
+                description = { Text("Manage third-party content plugins") },
+                icon = androidx.compose.ui.res.painterResource(echo.music.iad1tya.R.drawable.extension),
+                onClick = {
+                  onDismissRequest()
+                  onNavigate("settings/extensions")
+                }
+              )
+            )
           }
       )
 

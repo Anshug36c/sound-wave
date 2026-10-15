@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
@@ -55,8 +57,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
 import androidx.core.net.toUri
 import androidx.navigation.NavController
 import com.music.innertube.models.IpVersion
@@ -64,18 +64,22 @@ import echo.music.iad1tya.LocalPlayerAwareWindowInsets
 import echo.music.iad1tya.R
 import echo.music.iad1tya.constants.AlbumCanvasEnabledKey
 import echo.music.iad1tya.constants.AppLanguageKey
+import echo.music.iad1tya.constants.RecommendationSourceKey
+import echo.music.iad1tya.constants.RecommendationSource
+import echo.music.iad1tya.constants.SpotifySpDcKey
+import kotlinx.coroutines.launch
 import echo.music.iad1tya.constants.ContentCountryKey
 import echo.music.iad1tya.constants.ContentLanguageKey
 import echo.music.iad1tya.constants.CountryCodeToName
 import echo.music.iad1tya.constants.EnableBetterLyricsKey
+import echo.music.iad1tya.constants.EnableCronetKey
 import echo.music.iad1tya.constants.EnableKugouKey
 import echo.music.iad1tya.constants.EnableLrcLibKey
 import echo.music.iad1tya.constants.EnablePaxsenixKey
 import echo.music.iad1tya.constants.EnableSimpMusicKey
 import echo.music.iad1tya.constants.EnableYouLyPlusKey
-import echo.music.iad1tya.constants.EnableCronetKey
-import echo.music.iad1tya.constants.ForceOpusKey
 import echo.music.iad1tya.constants.FetchFasterLyricsKey
+import echo.music.iad1tya.constants.ForceOpusKey
 import echo.music.iad1tya.constants.HideExplicitKey
 import echo.music.iad1tya.constants.HideVideoSongsKey
 import echo.music.iad1tya.constants.HideYoutubeShortsKey
@@ -141,6 +145,16 @@ fun ContentSettings(
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
 
+
+  val (spotifySpDc) = rememberPreference(key = SpotifySpDcKey, defaultValue = "")
+  val (recommendationSource, onRecommendationSourceChange) = rememberEnumPreference(key = RecommendationSourceKey, defaultValue = RecommendationSource.YOUTUBE)
+  
+  LaunchedEffect(spotifySpDc, recommendationSource) {
+      if (spotifySpDc.isBlank() && recommendationSource == RecommendationSource.SPOTIFY) {
+          onRecommendationSourceChange(RecommendationSource.YOUTUBE)
+      }
+  }
+
   val (appLanguage, onAppLanguageChange) =
     rememberPreference(key = AppLanguageKey, defaultValue = SYSTEM_DEFAULT)
 
@@ -175,8 +189,7 @@ fun ContentSettings(
     rememberPreference(key = ContentCountryKey, defaultValue = "system")
   val (suggestionRegion, onSuggestionRegionChange) =
     rememberPreference(key = SuggestionRegionKey, defaultValue = "system")
-  val (forceOpus, onForceOpusChange) =
-    rememberPreference(key = ForceOpusKey, defaultValue = true)
+  val (forceOpus, onForceOpusChange) = rememberPreference(key = ForceOpusKey, defaultValue = true)
   val (enableCronet, onEnableCronetChange) =
     rememberPreference(key = EnableCronetKey, defaultValue = true)
   val (hideExplicit, onHideExplicitChange) =
@@ -654,17 +667,18 @@ fun ContentSettings(
     Material3SettingsGroup(
       scrollState = scrollState,
       title = "Privacy",
-      items = listOf(
-        Material3SettingsItem(
-          isHighlighted = false,
-          title = { Text("Blocked Artists") },
-          description = { Text("Manage hidden artists") },
-          customIcon = { Icon(Icons.Default.Block, null) },
-          onClick = { navController.navigate("blocked_artists") }
+      items =
+        listOf(
+          Material3SettingsItem(
+            isHighlighted = false,
+            title = { Text("Blocked Artists") },
+            description = { Text("Manage hidden artists") },
+            customIcon = { Icon(Icons.Default.Block, null) },
+            onClick = { navController.navigate("blocked_artists") }
+          )
         )
-      )
     )
-    
+
     Material3SettingsGroup(
       scrollState = scrollState,
       title = stringResource(R.string.general),
@@ -674,7 +688,11 @@ fun ContentSettings(
             isHighlighted = (highlightKey == "Force Opus Audio"),
             icon = painterResource(R.drawable.music_note),
             title = { Text("Force Opus Audio (itag 251)") },
-            description = { Text("Force WebM/Opus streaming. Halves data usage and buffers 2x faster, but may lower raw bitrate.") },
+            description = {
+              Text(
+                "Force WebM/Opus streaming. Halves data usage and buffers 2x faster, but may lower raw bitrate."
+              )
+            },
             trailingContent = {
               Switch(
                 checked = forceOpus,
@@ -682,9 +700,7 @@ fun ContentSettings(
                 thumbContent = {
                   Icon(
                     painter =
-                      painterResource(
-                        id = if (forceOpus) R.drawable.check else R.drawable.close
-                      ),
+                      painterResource(id = if (forceOpus) R.drawable.check else R.drawable.close),
                     contentDescription = null,
                     modifier = Modifier.size(SwitchDefaults.IconSize),
                   )
@@ -697,7 +713,9 @@ fun ContentSettings(
             isHighlighted = (highlightKey == "Enable HTTP/3 (Cronet)"),
             icon = painterResource(R.drawable.speed),
             title = { Text("Enable HTTP/3 (Cronet)") },
-            description = { Text("Use QUIC over UDP for zero-latency streaming (Restart required)") },
+            description = {
+              Text("Use QUIC over UDP for zero-latency streaming (Restart required)")
+            },
             trailingContent = {
               Switch(
                 checked = enableCronet,
@@ -1059,6 +1077,33 @@ fun ContentSettings(
       title = stringResource(R.string.misc),
       items =
         listOf(
+          Material3SettingsItem(
+            isHighlighted = (highlightKey == stringResource(R.string.recommendation_source)),
+            icon = painterResource(R.drawable.explore_outlined),
+            title = { Text(stringResource(R.string.recommendation_source)) },
+            description = {
+              Text(
+                when (recommendationSource) {
+                  RecommendationSource.YOUTUBE -> stringResource(R.string.recommendation_source_youtube)
+                  RecommendationSource.SPOTIFY -> stringResource(R.string.recommendation_source_spotify)
+                }
+              )
+            },
+            onClick = {
+              if (recommendationSource == RecommendationSource.YOUTUBE) {
+                if (spotifySpDc.isBlank()) {
+                   // Cannot switch to Spotify if not logged in
+                   scope.launch {
+                       android.widget.Toast.makeText(context, R.string.spotify_recommendation_login_required, android.widget.Toast.LENGTH_LONG).show()
+                   }
+                } else {
+                   onRecommendationSourceChange(RecommendationSource.SPOTIFY)
+                }
+              } else {
+                onRecommendationSourceChange(RecommendationSource.YOUTUBE)
+              }
+            }
+          ),
           Material3SettingsItem(
             isHighlighted = (highlightKey == stringResource(R.string.randomize_home_order)),
             icon = painterResource(R.drawable.shuffle),

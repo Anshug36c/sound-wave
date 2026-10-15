@@ -6,8 +6,15 @@ This guide covers building the Soundwave source copy. The app can be built and o
 
 - JDK 21
 - Android SDK platform/build tools required by the Gradle configuration (compile SDK 37)
-- Android NDK `27.0.12077973`
+- Android NDK `28.2.13676358` (pinned by `ndkVersion` in `app` and `usbaudio`)
+- CMake `3.22.1` — required by the `:usbaudio` module, which builds native C++ sources
 - Gradle wrapper included in this project
+
+Install the matching packages with the SDK manager:
+
+```sh
+sdkmanager "platforms;android-37.0" "ndk;28.2.13676358" "cmake;3.22.1"
+```
 
 Copy `local.properties.template` to `local.properties` and set `sdk.dir` to your Android SDK directory. Do not commit `local.properties` or provider credentials.
 
@@ -16,16 +23,32 @@ Copy `local.properties.template` to `local.properties` and set `sdk.dir` to your
 From the project root:
 
 ```sh
-./gradlew :app:assembleFossUniversalDebug
+./gradlew :app:assembleUniversalFossDebug
 ```
 
 The `foss` flavor avoids Google Play Services/Cast. The `gms` flavor includes Cast support. The inherited upstream Google Services/Firebase configuration is intentionally not included; supply a Soundwave-owned `app/google-services.json` only if your build should enable Firebase:
 
 ```sh
-./gradlew :app:assembleGmsUniversalDebug
+./gradlew :app:assembleUniversalGmsDebug
 ```
 
-The installed application ID is `com.soundwave.music`. The internal Kotlin namespace remains `echo.music.iad1tya` to avoid a risky mass rename across the multi-module source.
+Flavor dimensions are declared as `(abi, variant)`, so Gradle task names put the ABI first:
+`assembleUniversalFossDebug`, not `assembleFossUniversalDebug`.
+
+The installed application ID is `com.soundwave.music`. The internal Kotlin namespace remains `echo.music.iad1tya` to avoid a risky mass rename across the multi-module source; relative manifest
+component names such as `.playback.MusicService` resolve against that namespace, so the split is
+required for the app's services, receivers, and widgets to load.
+
+## Tests
+
+```sh
+./gradlew --continue \
+  :domain:testDebugUnitTest :metadata:testDebugUnitTest :dsp-core:testDebugUnitTest \
+  :audio-dsp:testDebugUnitTest :playback:testDebugUnitTest :core:testDebugUnitTest \
+  :app:testUniversalFossDebugUnitTest
+```
+
+These are JVM/Robolectric unit tests. They do not exercise real streaming, scraping, or downloads.
 
 ## Optional provider configuration
 

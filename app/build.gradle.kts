@@ -56,14 +56,16 @@ if (hasGoogleServicesConfig) {
 android {
   namespace = "echo.music.iad1tya"
   compileSdk = 37
-  ndkVersion = "27.0.12077973"
+  ndkVersion = "28.2.13676358"
 
   defaultConfig {
     applicationId = "com.soundwave.music"
     minSdk = 26
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0.0"
+    // Soundwave keeps its own version line; 1.1.0 is the first release
+    // synced to the Echo-Music v1.4.3 upstream source base.
+    versionCode = 2
+    versionName = "1.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables.useSupportLibrary = true
@@ -263,9 +265,12 @@ dependencies {
 
   implementation(project(":core"))
   implementation(project(":playback"))
+  implementation(project(":audio-dsp"))
+  implementation(project(":dsp-core"))
+  implementation(project(":usbaudio"))
 
   // Firebase - GMS flavor only (excluded from F-Droid / FOSS builds)
-  "gmsImplementation"(platform("com.google.firebase:firebase-bom:33.1.0"))
+  "gmsImplementation"(platform("com.google.firebase:firebase-bom:34.19.0"))
   "gmsImplementation"("com.google.firebase:firebase-analytics")
   "gmsImplementation"("com.google.firebase:firebase-crashlytics")
 
@@ -331,9 +336,6 @@ dependencies {
   ksp("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.20")
   annotationProcessor("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.20")
 
-
-
-
   implementation(project(":innertube"))
   implementation("com.github.MetrolistGroup.innertubex:innertubex-android:v0.7.0")
 
@@ -369,4 +371,8 @@ dependencies {
   implementation("androidx.compose.material:material-icons-extended:1.7.8")
   implementation(libs.androidx.core.splashscreen)
   implementation(libs.ffmpeg.kit.audio)
+
+  testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
 }

@@ -5,7 +5,7 @@ plugins {
 
 android {
   namespace = "com.music.lrclib"
-  compileSdk = 36
+  compileSdk = 37
 
   defaultConfig { minSdk = 26 }
 
@@ -25,6 +25,7 @@ dependencies {
   implementation(libs.ktor.client.content.negotiation)
   implementation(libs.ktor.serialization.json)
   implementation(libs.ktor.client.encoding)
+  implementation(project(":metadata"))
   testImplementation(libs.junit)
 
   coreLibraryDesugaring(libs.desugaring)

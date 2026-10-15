@@ -174,6 +174,7 @@
     <string name="lyrics_thumbnail_play_pause_desc">Show a play/pause button overlay on the song thumbnail in full-screen lyrics</string>
 
     <string name="picker_not_available">Document picker is not available on this device. Using app\'s default export directory.</string>
+    <string name="system_picker_unavailable">System picker is not available on this device.</string>
     <string name="edit_song">Edit song</string>
     <string name="song_title">Song title</string>
     <string name="song_artists">Song artists</string>
@@ -294,8 +295,24 @@
     <string name="apple_music">Apple Music</string>
     <string name="squiggly">Squiggly</string>
     <string name="misc">Misc</string>
+    <string name="haptics">Haptics</string>
+    <string name="haptics_desc">Configure vibration and tactile feedback</string>
+
     <string name="enable_haptics">Enable haptics</string>
     <string name="enable_haptics_desc">Provide haptic feedback while scrolling, clicking, and interacting with the app</string>
+    <string name="haptics_intensity">Haptic intensity</string>
+    <string name="haptics_intensity_desc">Adjust vibration strength for haptic feedback</string>
+    <string name="haptic_intensity_light">Light (Soft)</string>
+    <string name="haptic_intensity_medium">Medium (Standard)</string>
+    <string name="haptic_intensity_strong">Strong (Pronounced)</string>
+    <string name="haptic_click_feedback">Touch &amp; click feedback</string>
+    <string name="haptic_click_feedback_desc">Vibrate on button taps, navigation tabs, and switches</string>
+    <string name="haptic_long_press_feedback">Long press feedback</string>
+    <string name="haptic_long_press_feedback_desc">Vibrate when long pressing items and opening context menus</string>
+    <string name="haptic_scroll_edge_feedback">Scroll boundary feedback</string>
+    <string name="haptic_scroll_edge_feedback_desc">Vibrate softly when reaching the top or bottom edge of a list</string>
+    <string name="haptic_slider_feedback">Seekbar &amp; slider feedback</string>
+    <string name="haptic_slider_feedback_desc">Provide tactile ticks when adjusting progress and volume sliders</string>
 
     <string name="activity_history">Listening Summary</string>
     <string name="total_listening_time">Total Listening Time</string>
@@ -850,5 +867,17 @@
     <string name="system_update">Updates</string>
     <string name="app_updates_title">Soundwave release information</string>
     <string name="version">Version %1$s</string>
-</resources>
 
+
+    <string name="recommendation_source">Recommendation provider</string>
+    <string name="recommendation_source_youtube">YouTube Music</string>
+    <string name="recommendation_source_spotify">Spotify</string>
+    <string name="spotify_recommendation_login_required">Spotify is not connected. Connect your account in Settings > Integrations to use Spotify recommendations.</string>
+    <string name="varispeed">Enable varispeed</string>
+    <string name="varispeed_description">Link pitch to playback speed, resulting in tape-style speedup and slowdown effects</string>
+
+    <string name="speed">Speed</string>
+
+    <string name="create_from_taste">Create from Taste</string>
+    <string name="settings_search_destination_unavailable">That setting isn\'t available in this build</string>
+</resources>

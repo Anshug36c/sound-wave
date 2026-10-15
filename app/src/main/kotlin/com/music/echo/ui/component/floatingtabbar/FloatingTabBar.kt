@@ -30,9 +30,11 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -41,9 +43,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Indication
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,11 +56,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
-
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,12 +69,8 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -90,6 +85,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -626,7 +623,9 @@ private fun SharedTransitionScope.ExpandedBar(
   Column(
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(sizes.componentSpacing),
-    modifier = Modifier.width(IntrinsicSize.Min)
+    modifier =
+      if (accessory != null) Modifier.widthIn(max = 480.dp).fillMaxWidth()
+      else Modifier.width(IntrinsicSize.Min)
   ) {
     if (accessory != null) {
       ExpandedAccessory(
@@ -732,9 +731,24 @@ private fun SharedTransitionScope.ExpandedTabs(
   val targetHeight = tabHeights[selectedIndex] ?: 0.dp
   val targetOffset = tabOffsets[selectedIndex] ?: 0.dp
 
-  val animatedWidth by animateDpAsState(targetValue = targetWidth, label = "width", animationSpec = spring(stiffness = 500f, dampingRatio = 0.9f))
-  val animatedHeight by animateDpAsState(targetValue = targetHeight, label = "height", animationSpec = spring(stiffness = 500f, dampingRatio = 0.9f))
-  val animatedOffset by animateDpAsState(targetValue = targetOffset, label = "offset", animationSpec = spring(stiffness = 500f, dampingRatio = 0.9f))
+  val animatedWidth by
+    animateDpAsState(
+      targetValue = targetWidth,
+      label = "width",
+      animationSpec = spring(stiffness = 500f, dampingRatio = 0.9f)
+    )
+  val animatedHeight by
+    animateDpAsState(
+      targetValue = targetHeight,
+      label = "height",
+      animationSpec = spring(stiffness = 500f, dampingRatio = 0.9f)
+    )
+  val animatedOffset by
+    animateDpAsState(
+      targetValue = targetOffset,
+      label = "offset",
+      animationSpec = spring(stiffness = 500f, dampingRatio = 0.9f)
+    )
 
   Box(
     contentAlignment = Alignment.CenterStart,
@@ -755,8 +769,7 @@ private fun SharedTransitionScope.ExpandedTabs(
   ) {
     if (targetWidth > 0.dp) {
       Box(
-        Modifier
-          .offset(x = animatedOffset)
+        Modifier.offset(x = animatedOffset)
           .width(animatedWidth)
           .height(52.dp)
           .clip(shapes.tabShape)
@@ -875,12 +888,14 @@ private fun Tab(
     if (!isStandalone && !isInline) {
       androidx.compose.animation.AnimatedVisibility(
         visible = isSelected,
-        enter = androidx.compose.animation.expandHorizontally(expandFrom = Alignment.Start) + androidx.compose.animation.fadeIn(),
-        exit = androidx.compose.animation.shrinkHorizontally(shrinkTowards = Alignment.Start) + androidx.compose.animation.fadeOut()
+        enter =
+          androidx.compose.animation.expandHorizontally(expandFrom = Alignment.Start) +
+            androidx.compose.animation.fadeIn(),
+        exit =
+          androidx.compose.animation.shrinkHorizontally(shrinkTowards = Alignment.Start) +
+            androidx.compose.animation.fadeOut()
       ) {
-        Box(Modifier.padding(start = 4.dp)) {
-          title()
-        }
+        Box(Modifier.padding(start = 4.dp)) { title() }
       }
     }
   }
