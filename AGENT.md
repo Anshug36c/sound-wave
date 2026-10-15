@@ -100,7 +100,8 @@ persistence, caching, the DSP pipeline, and navigation/routing helpers.
   launch failures) and `PlaylistNavigationTest.kt` (malformed/encoded playlist IDs).
 
 `:domain`, `:metadata`, and `:dsp-core` are pure Kotlin/JVM modules, so their test task is `test`;
-the Android library modules use `testDebugUnitTest`, and `:app` uses the flavor-specific
+the Android library modules use `testDebugUnitTest` (`:playback` is flavor-qualified as
+`testFossDebugUnitTest` because it declares foss/gms flavors), and `:app` uses the flavor-specific
 `testUniversalFossDebugUnitTest`.
 
 Soundwave ships no AI lyric-translation providers, so the upstream `:lyrics` translation tests are
@@ -110,7 +111,7 @@ not part of this build and `:lyrics` has no unit tests.
 ./gradlew --continue \
   :domain:test :metadata:test :dsp-core:test \
   :audio-dsp:testDebugUnitTest :usbaudio:testDebugUnitTest \
-  :playback:testDebugUnitTest :core:testDebugUnitTest \
+  :playback:testFossDebugUnitTest :core:testDebugUnitTest \
   :app:testUniversalFossDebugUnitTest
 ```
 
