@@ -128,12 +128,14 @@ integrations simply report themselves as unconfigured.
 
 ```sh
 ./gradlew --continue \
-  :domain:testDebugUnitTest :metadata:testDebugUnitTest :dsp-core:testDebugUnitTest \
-  :audio-dsp:testDebugUnitTest :playback:testDebugUnitTest :core:testDebugUnitTest \
+  :domain:test :metadata:test :dsp-core:test \
+  :audio-dsp:testDebugUnitTest :usbaudio:testDebugUnitTest \
+  :playback:testDebugUnitTest :core:testDebugUnitTest \
   :app:testUniversalFossDebugUnitTest
 ```
 
-These are JVM/Robolectric unit tests covering database migrations, recommendation relations,
+:domain, :metadata and :dsp-core are pure Kotlin/JVM modules, so their test task is `test`; the
+Android library modules use `testDebugUnitTest`. These are JVM/Robolectric unit tests covering database migrations, recommendation relations,
 taste scoring, repository logic, the DSP pipeline, chunked-stream error handling, picker error
 handling, and playlist routing. They do **not** exercise real streaming, scraping, or downloads —
 those paths need a device or emulator and live provider responses.

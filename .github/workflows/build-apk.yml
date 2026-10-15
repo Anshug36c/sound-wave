@@ -65,11 +65,14 @@ jobs:
         # lyric-translation providers and their tests are not part of this build).
         run: |
           chmod +x gradlew
+          # :domain, :metadata and :dsp-core are pure Kotlin/JVM modules, so their test task
+          # is `test`; the Android library modules use `testDebugUnitTest`.
           ./gradlew --no-daemon --continue \
-            :domain:testDebugUnitTest \
-            :metadata:testDebugUnitTest \
-            :dsp-core:testDebugUnitTest \
+            :domain:test \
+            :metadata:test \
+            :dsp-core:test \
             :audio-dsp:testDebugUnitTest \
+            :usbaudio:testDebugUnitTest \
             :playback:testDebugUnitTest \
             :core:testDebugUnitTest \
             :app:testUniversalFossDebugUnitTest

@@ -43,8 +43,9 @@ required for the app's services, receivers, and widgets to load.
 
 ```sh
 ./gradlew --continue \
-  :domain:testDebugUnitTest :metadata:testDebugUnitTest :dsp-core:testDebugUnitTest \
-  :audio-dsp:testDebugUnitTest :playback:testDebugUnitTest :core:testDebugUnitTest \
+  :domain:test :metadata:test :dsp-core:test \
+  :audio-dsp:testDebugUnitTest :usbaudio:testDebugUnitTest \
+  :playback:testDebugUnitTest :core:testDebugUnitTest \
   :app:testUniversalFossDebugUnitTest
 ```
 
