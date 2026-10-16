@@ -388,6 +388,48 @@ fun RemoteWebPlayerSettings(
           )
         }
       }
+      Spacer(Modifier.height(16.dp))
+      Text("Keeps stopping or logging the browser out?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Spacer(Modifier.height(8.dp))
+      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.padding(16.dp)) {
+          Text(
+            "Some phones (Xiaomi/Redmi, Oppo, Vivo, OnePlus) kill background apps aggressively, which stops the bridge and drops the tunnel. Allow SoundWave to run without battery restrictions, and keep it out of "deep sleep" lists:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Spacer(Modifier.height(12.dp))
+          OutlinedButton(
+            onClick = {
+              val intent =
+                android.content.Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:" + context.packageName),
+                  )
+                  .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+              try {
+                context.startActivity(intent)
+              } catch (e: Exception) {
+                try {
+                  context.startActivity(
+                    android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                      .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                  )
+                } catch (e2: Exception) {
+                  Toast.makeText(context, "Open battery settings for SoundWave manually", Toast.LENGTH_LONG).show()
+                }
+              }
+            },
+            modifier = Modifier.fillMaxWidth(),
+          ) { Text("Allow background activity for SoundWave") }
+          Spacer(Modifier.height(8.dp))
+          Text(
+            "Paired browsers stay paired across bridge/app restarts — if you still see "session expired", pair once more after updating the app.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      }
     } else if (status.enabled) {
       Spacer(Modifier.height(16.dp))
       Text("Starting the bridge… if this persists, toggle it off and on.", style = MaterialTheme.typography.bodyMedium)

@@ -75,36 +75,73 @@ class YouTubeMusicProvider : MusicProvider {
   }
 
   override fun resolve(trackId: String): ResolvedSource {
-    val extracted =
+    val resolved =
       runBlocking(Dispatchers.IO) {
         withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
           // Prefer the Safari-decodable AAC/M4A rendition.
-          val m4a =
+          val extracted =
             try {
               InnerTubeXResolver.extract(trackId, maxKbps = 160, requireM4a = true)
             } catch (e: Exception) {
               Timber.tag(TAG).w(e, "M4A resolve failed for $trackId; trying any audio")
               null
             }
-          m4a
-            ?: try {
-              InnerTubeXResolver.extract(trackId, maxKbps = 160, requireM4a = false)
-            } catch (e: Exception) {
-              Timber.tag(TAG).w(e, "Resolve failed for $trackId")
-              null
-            }
+              ?: try {
+                InnerTubeXResolver.extract(trackId, maxKbps = 160, requireM4a = false)
+              } catch (e: Exception) {
+                Timber.tag(TAG).w(e, "Resolve failed for $trackId")
+                null
+              }
+          if (extracted != null) {
+            val mime = extracted.mimeType.substringBefore(';').trim().ifEmpty { "audio/mp4" }
+            ResolvedSource(
+              trackId = trackId,
+              upstreamUrl = extracted.url,
+              contentType = mime,
+              expiresAtMs = upstreamExpiryMs(extracted.url),
+              contentLength = null,
+              headers = extracted.headers,
+              resolverClient = extracted.clientName,
+            )
+          } else {
+            newPipeFallback(trackId)
+          }
         }
-      } ?: throw RemoteException.resolutionFailed()
+      }
+    return resolved ?: throw RemoteException.resolutionFailed()
+  }
 
-    val mime = extracted.mimeType.substringBefore(';').trim().ifEmpty { "audio/mp4" }
+  /**
+   * Last-resort resolution through the BravePipe/NewPipe extractor the app
+   * already ships (the same fallback its own player uses). Prefers m4a
+   * itags (Safari), then any audio itag.
+   */
+  private fun newPipeFallback(trackId: String): ResolvedSource? {
+    val streams =
+      try {
+        YouTube.getNewPipeStreamUrls(trackId)
+      } catch (e: Exception) {
+        Timber.tag(TAG).w(e, "NewPipe fallback failed for $trackId")
+        return null
+      }
+    if (streams.isEmpty()) return null
+    val byItag = streams.toMap()
+    val m4aItag = M4A_ITAGS.firstOrNull { byItag.containsKey(it) }
+    val chosenItag = m4aItag ?: byItag.keys.firstOrNull { it in KNOWN_AUDIO_ITAGS } ?: return null
+    val url = byItag[chosenItag] ?: return null
+    val headers =
+      runCatching {
+        InnerTubeXResolver.headersFor(url)
+          ?: echo.music.iad1tya.utils.PlayerClient.forStreamUrl(url).mediaHeaders()
+      }.getOrDefault(emptyMap())
     return ResolvedSource(
       trackId = trackId,
-      upstreamUrl = extracted.url,
-      contentType = mime,
-      expiresAtMs = upstreamExpiryMs(extracted.url),
+      upstreamUrl = url,
+      contentType = if (m4aItag != null) "audio/mp4" else "audio/webm",
+      expiresAtMs = upstreamExpiryMs(url),
       contentLength = null,
-      headers = extracted.headers,
-      resolverClient = extracted.clientName,
+      headers = headers,
+      resolverClient = "newpipe-fallback",
     )
   }
 
@@ -123,5 +160,7 @@ class YouTubeMusicProvider : MusicProvider {
     private const val RESOLVE_TIMEOUT_MS = 60_000L
     private const val DEFAULT_EXPIRY_MS = 5 * 60 * 60 * 1000L
     private val EXPIRY_REGEX = Regex("""[?&]expire=(\d+)""")
+    private val M4A_ITAGS = listOf(141, 140, 139)
+    private val KNOWN_AUDIO_ITAGS = setOf(141, 140, 139, 251, 250, 249, 171, 172, 234, 233)
   }
 }

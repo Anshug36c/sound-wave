@@ -39,6 +39,7 @@ object RemoteBridge {
   private const val KEY_PORT = "port"
   private const val KEY_TUNNEL_ENABLED = "tunnel_enabled"
   private const val KEY_TUNNEL_PROVIDER = "tunnel_provider"
+  private const val KEY_SESSION_STATE = "session_state_json"
 
   private val _status = MutableStateFlow(Status())
   val status: StateFlow<Status> = _status.asStateFlow()
@@ -71,7 +72,24 @@ object RemoteBridge {
       return
     }
     try {
-      val sessions = sessionManager ?: RemoteSessionManager().also { sessionManager = it }
+      val sessions =
+        sessionManager
+          ?: RemoteSessionManager().also { manager ->
+            sessionManager = manager
+            // Sessions survive process death (OEM battery killers restart
+            // the app process; a paired browser must not be logged out by
+            // that). Stored only in app-private preferences.
+            prefs(app).getString(KEY_SESSION_STATE, null)?.let { saved ->
+              manager.importState(saved)
+            }
+            manager.onStateChanged = {
+              try {
+                prefs(app).edit().putString(KEY_SESSION_STATE, manager.exportState()).apply()
+              } catch (e: Exception) {
+                Timber.tag(TAG).w(e, "Could not persist remote sessions")
+              }
+            }
+          }
       // A pairing code must exist from the moment the bridge is up, so the
       // user can pair without first opening this settings screen.
       sessions.currentPairingCode()

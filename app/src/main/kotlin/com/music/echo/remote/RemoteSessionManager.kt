@@ -60,6 +60,82 @@ class RemoteSessionManager(
   private val sessions = ConcurrentHashMap<String, Session>()
   private val grants = ConcurrentHashMap<String, StreamGrant>()
 
+  /**
+   * Invoked after any durable state change (pair, revoke, code rotation).
+   * The Android layer persists [exportState] so sessions survive the app
+   * process being killed — OEM battery killers restarting the process must
+   * not log every paired browser out.
+   */
+  @Volatile var onStateChanged: (() -> Unit)? = null
+
+  /** Durable snapshot: sessions + the active pairing code (never grants). */
+  @Synchronized
+  fun exportState(): String {
+    val now = clock()
+    val sessionList =
+      sessions.values
+        .filter { it.expiresAtMs > now }
+        .map {
+          MiniJson.obj(
+            "token" to it.token,
+            "createdAtMs" to it.createdAtMs,
+            "expiresAtMs" to it.expiresAtMs,
+            "lastSeenAtMs" to it.lastSeenAtMs,
+            "userAgent" to it.userAgent,
+          )
+        }
+    return MiniJson.stringify(
+      MiniJson.obj(
+        "sessions" to sessionList,
+        "pairingCode" to pairingCode,
+        "pairingExpiresAtMs" to pairingExpiresAtMs,
+      )
+    )
+  }
+
+  /** Restore a snapshot from [exportState]; expired entries are dropped. */
+  @Synchronized
+  fun importState(json: String) {
+    val root =
+      try {
+        MiniJson.parseObject(json)
+      } catch (e: Exception) {
+        return
+      }
+    val now = clock()
+    sessions.clear()
+    grants.clear()
+    root.objList("sessions").orEmpty().forEach { item ->
+      val map = item as? Map<*, *> ?: return@forEach
+      @Suppress("UNCHECKED_CAST")
+      val fields = map as Map<String, Any?>
+      val token = fields.objString("token") ?: return@forEach
+      val expires = fields.objLong("expiresAtMs") ?: return@forEach
+      if (expires <= now) return@forEach
+      sessions[token] =
+        Session(
+          token = token,
+          createdAtMs = fields.objLong("createdAtMs") ?: now,
+          expiresAtMs = expires,
+          lastSeenAtMs = fields.objLong("lastSeenAtMs") ?: now,
+          userAgent = fields.objString("userAgent") ?: "",
+        )
+    }
+    val code = root.objString("pairingCode")
+    val codeExpires = root.objLong("pairingExpiresAtMs") ?: 0L
+    if (code != null && codeExpires > now) {
+      pairingCode = code
+      pairingExpiresAtMs = codeExpires
+    }
+  }
+
+  private fun stateChanged() {
+    try {
+      onStateChanged?.invoke()
+    } catch (_: Exception) {
+    }
+  }
+
   @Volatile private var pairingCode: String? = null
   @Volatile private var pairingExpiresAtMs: Long = 0L
 
@@ -77,12 +153,18 @@ class RemoteSessionManager(
     val now = clock()
     val existing = pairingCode
     if (existing != null && pairingExpiresAtMs > now) return existing to pairingExpiresAtMs
-    return rotatePairingLocked(now)
+    val generated = rotatePairingLocked(now)
+    stateChanged()
+    return generated
   }
 
   /** Force a new pairing code (invalidates the previous one). */
   @Synchronized
-  fun rotatePairing(): Pair<String, Long> = rotatePairingLocked(clock())
+  fun rotatePairing(): Pair<String, Long> {
+    val result = rotatePairingLocked(clock())
+    stateChanged()
+    return result
+  }
 
   private fun rotatePairingLocked(now: Long): Pair<String, Long> {
     val code = (100000 + random.nextInt(900000)).toString()
@@ -121,6 +203,7 @@ class RemoteSessionManager(
 
     // Single use: a fresh code is required for the next pairing.
     rotatePairingLocked(now)
+    stateChanged()
     attemptsByIp.remove(sourceIp)
     globalFailures = 0
 
@@ -184,13 +267,17 @@ class RemoteSessionManager(
   }
 
   fun revoke(token: String) {
-    synchronized(this) { revokeLocked(token) }
+    synchronized(this) {
+      revokeLocked(token)
+      stateChanged()
+    }
   }
 
   fun revokeAll() {
     synchronized(this) {
       sessions.clear()
       grants.clear()
+      stateChanged()
     }
   }
 

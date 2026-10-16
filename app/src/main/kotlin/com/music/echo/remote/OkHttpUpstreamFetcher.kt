@@ -14,7 +14,7 @@ class OkHttpUpstreamFetcher(
   private val client: OkHttpClient =
     OkHttpClient.Builder()
       .connectTimeout(15, TimeUnit.SECONDS)
-      .readTimeout(60, TimeUnit.SECONDS)
+      .readTimeout(180, TimeUnit.SECONDS)
       .writeTimeout(15, TimeUnit.SECONDS)
       .followRedirects(true)
       .build(),

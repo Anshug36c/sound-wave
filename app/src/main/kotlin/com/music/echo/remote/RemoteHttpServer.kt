@@ -113,6 +113,7 @@ class RemoteHttpServer(
     try {
       route(client, request, output)
     } catch (e: RemoteException) {
+      log("bridge ${request.method} ${request.path} -> ${e.httpStatus} ${e.code}")
       writeJson(output, e.httpStatus, e.toJson(), request)
     } catch (e: IOException) {
       throw e
@@ -180,7 +181,13 @@ class RemoteHttpServer(
           request,
         )
       }
-      path.startsWith("/api/stream/") -> handleStream(request, output, path.removePrefix("/api/stream/"))
+      path.startsWith("/api/stream/") -> {
+        try {
+          client.soTimeout = STREAM_SOCKET_TIMEOUT_MS
+        } catch (_: Exception) {
+        }
+        handleStream(request, output, path.removePrefix("/api/stream/"))
+      }
       path.startsWith("/api/") -> handleAuthedApi(request, output, path)
       else -> throw RemoteException.notFound()
     }
@@ -289,7 +296,8 @@ class RemoteHttpServer(
     rangeHeader: String?,
   ) {
     var source = grant.source
-    var upstream = openUpstream(source, rangeHeader, request.method == "HEAD")
+    val upstreamRange = rangeHeader ?: "bytes=0-"
+    var upstream = openUpstream(source, upstreamRange, request.method == "HEAD")
     if ((upstream.status == 403 || upstream.status == 410) && request.method == "GET") {
       // Signed URLs expire; re-resolve once and retry before bothering the user.
       upstream.close()
@@ -302,28 +310,36 @@ class RemoteHttpServer(
       if (refreshed != null) {
         grant.source = refreshed
         source = refreshed
-        upstream = openUpstream(source, rangeHeader, headOnly = false)
+        upstream = openUpstream(source, upstreamRange, headOnly = false)
       }
     }
     upstream.use { response ->
       when (response.status) {
         200, 206 -> {
+          var status = response.status
+          var contentLength = response.contentLength
+          var contentRange = response.contentRange
+          // A range-less client gets a normal 200 full response even though
+          // we asked upstream for bytes=0- (which answers 206).
+          if (rangeHeader == null && response.status == 206 && contentRange != null) {
+            val total = contentRange.substringAfter('/', "").toLongOrNull()
+            val start = contentRange.removePrefix("bytes ").substringBefore('-').toLongOrNull()
+            if (total != null && start == 0L) {
+              status = 200
+              contentLength = total
+              contentRange = null
+            }
+          }
           val headers = LinkedHashMap<String, String>()
           headers["Content-Type"] = response.contentType ?: source.contentType
           headers["Accept-Ranges"] = response.acceptRanges ?: "bytes"
-          response.contentRange?.let { headers["Content-Range"] = it }
+          contentRange?.let { headers["Content-Range"] = it }
           headers["Cache-Control"] = "no-store"
           corsHeaders(request, isStream = true)?.let { headers["Access-Control-Allow-Origin"] = it }
-          if (request.method == "HEAD" || response.contentLength < 0) {
-            if (response.contentLength >= 0) headers["Content-Length"] = response.contentLength.toString()
-            writeHead(output, response.status, headers)
-            if (request.method == "GET" && response.body != null) {
-              copyBody(response.body, output)
-            }
-          } else {
-            headers["Content-Length"] = response.contentLength.toString()
-            writeHead(output, response.status, headers)
-            if (response.body != null) copyBody(response.body, output)
+          if (contentLength >= 0) headers["Content-Length"] = contentLength.toString()
+          writeHead(output, status, headers)
+          if (request.method == "GET" && response.body != null) {
+            copyBody(response.body, output)
           }
         }
         416 -> {
@@ -656,6 +672,7 @@ class RemoteHttpServer(
     private const val MAX_BODY_BYTES = 64 * 1024
     private const val MAX_QUERY_LENGTH = 120
     private const val SOCKET_TIMEOUT_MS = 30_000
+    private const val STREAM_SOCKET_TIMEOUT_MS = 120_000
     private const val STREAM_BUFFER_BYTES = 64 * 1024
     private const val MAX_CONCURRENT_STREAMS = 3
     private const val SEARCH_PER_MINUTE = 30

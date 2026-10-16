@@ -29,6 +29,7 @@ import timber.log.Timber
 class RemoteBridgeService : Service() {
 
   private var networkCallback: ConnectivityManager.NetworkCallback? = null
+  private var wakeLock: android.os.PowerManager.WakeLock? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -36,6 +37,19 @@ class RemoteBridgeService : Service() {
     super.onCreate()
     createChannel()
     registerNetworkCallback()
+    // Keep the CPU/network path awake while bridging; without this, deep
+    // sleep on aggressive OEM builds stalls the tunnel and streams. Bounded
+    // to the same ~6h window Android 15 allows this service type.
+    try {
+      val power = getSystemService(android.os.PowerManager::class.java)
+      wakeLock =
+        power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "soundwave:remote-bridge").apply {
+          setReferenceCounted(false)
+          acquire(6 * 60 * 60 * 1000L)
+        }
+    } catch (e: Exception) {
+      Timber.tag(TAG).w(e, "Could not acquire remote bridge wakelock")
+    }
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -62,6 +76,12 @@ class RemoteBridgeService : Service() {
   }
 
   override fun onDestroy() {
+    try {
+      if (wakeLock?.isHeld == true) wakeLock?.release()
+    } catch (e: Exception) {
+      Timber.tag(TAG).w(e, "Could not release remote bridge wakelock")
+    }
+    wakeLock = null
     unregisterNetworkCallback()
     super.onDestroy()
   }

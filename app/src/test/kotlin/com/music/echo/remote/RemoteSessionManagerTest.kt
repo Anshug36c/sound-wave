@@ -61,6 +61,27 @@ class RemoteSessionManagerTest {
   }
 
   @Test
+  fun sessionsAndPairingCodeSurviveExportImport() {
+    var now = 4_000_000L
+    val first = RemoteSessionManager(clock = { now })
+    val (code, _) = first.currentPairingCode()
+    val session = first.pair("1.1.1.1", code, "ua")
+    val (nextCode, _) = first.currentPairingCode()
+
+    // Simulate the app process being killed and restarted.
+    val restored = RemoteSessionManager(clock = { now })
+    restored.importState(first.exportState())
+
+    assertEquals(session.token, restored.authenticate(session.token).token)
+    assertEquals("pairing code must survive a process restart", nextCode, restored.currentPairingCode().first)
+
+    now += RemoteSessionManager.SESSION_TTL_MS + 1
+    val late = RemoteSessionManager(clock = { now })
+    late.importState(first.exportState())
+    expectRemote("UNAUTHORIZED") { late.authenticate(session.token) }
+  }
+
+  @Test
   fun streamGrantsAreBoundToTheirSession() {
     val manager = RemoteSessionManager(clock = { 3_000_000L })
     val (code, _) = manager.currentPairingCode()

@@ -43,6 +43,7 @@ class SshTunnelManager(
   private val enabled = AtomicBoolean(false)
   private var worker: Thread? = null
   @Volatile private var session: Session? = null
+  @Volatile private var shellChannel: ChannelShell? = null
 
   fun start(localPort: Int, provider: Provider, autoFallback: Boolean) {
     stop()
@@ -56,6 +57,11 @@ class SshTunnelManager(
 
   fun stop() {
     enabled.set(false)
+    try {
+      shellChannel?.disconnect()
+    } catch (_: Exception) {
+    }
+    shellChannel = null
     try {
       session?.disconnect()
     } catch (_: Exception) {
@@ -174,12 +180,39 @@ class SshTunnelManager(
         val read = input.read(buffer, 0, minOf(buffer.size, available))
         if (read < 0) break
         text.append(String(buffer, 0, read, Charsets.UTF_8))
-        findPublicUrl(text.toString(), provider)?.let { return it }
+        findPublicUrl(text.toString(), provider)?.let { url ->
+          shellChannel = channel
+          startShellDrain(channel, input)
+          return url
+        }
       } else {
         Thread.sleep(200)
       }
     }
     throw IllegalStateException("The tunnel service did not assign a URL in time.")
+  }
+
+  /**
+   * Keep consuming shell output (banners, QR art, keepalive chatter) so the
+   * SSH channel window never fills up and stalls the forwarded port.
+   */
+  private fun startShellDrain(channel: ChannelShell, input: java.io.InputStream) {
+    Thread(
+        {
+          val buffer = ByteArray(8192)
+          try {
+            while (enabled.get() && channel.isConnected) {
+              val read = input.read(buffer)
+              if (read < 0) break
+            }
+          } catch (_: Exception) {
+            // Shell ended; the hold loop notices a dead session and reconnects.
+          }
+        },
+        "soundwave-tunnel-shell",
+      )
+      .apply { isDaemon = true }
+      .start()
   }
 
   private fun findPublicUrl(text: String, provider: Provider): String? {

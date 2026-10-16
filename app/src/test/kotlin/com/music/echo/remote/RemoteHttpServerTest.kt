@@ -70,6 +70,8 @@ class RemoteHttpServerTest {
 
   class FakeFetcher(private val provider: FakeProvider) : UpstreamFetcher {
     @Volatile var failNextWith403 = false
+    @Volatile var lastRangeHeader: String? = null
+    @Volatile var sawRangeLessRequest = false
 
     override fun open(
       url: String,
@@ -77,6 +79,8 @@ class RemoteHttpServerTest {
       rangeHeader: String?,
       headOnly: Boolean,
     ): UpstreamResponse {
+      lastRangeHeader = rangeHeader
+      if (rangeHeader == null) sawRangeLessRequest = true
       if (failNextWith403) {
         failNextWith403 = false
         return UpstreamResponse(403, null, 0, null, null, null)
@@ -234,6 +238,34 @@ class RemoteHttpServerTest {
     assertEquals(provider.audio.size.toString(), head.header("content-length"))
 
     assertEquals(401, RawHttp.request(port, "GET", streamPath).status)
+  }
+
+  @Test
+  fun rangeLessStreamRequestFetchesUpstreamFromZero() {
+    val token = pair()
+    val resolve =
+      RawHttp.request(
+        port,
+        "POST",
+        "/api/resolve",
+        headers = auth(token),
+        body = """{"trackId":"dQw4w9WgXcQ"}""",
+      )
+    val streamPath = MiniJson.parseObject(resolve.text()).objString("streamPath")!!
+
+    // Media elements do not always send Range on the first request, and
+    // googlevideo 403s range-less GETs for most YouTube Music tracks, so the
+    // bridge must ask upstream with bytes=0- and still answer a plain 200.
+    val full = RawHttp.request(port, "GET", streamPath, headers = auth(token))
+    assertEquals(200, full.status)
+    assertTrue(full.body.contentEquals(provider.audio))
+    assertEquals(provider.audio.size.toString(), full.header("content-length"))
+    assertEquals("bytes=0-", fetcher.lastRangeHeader)
+    assertTrue("bridge must never forward a range-less request upstream", !fetcher.sawRangeLessRequest)
+
+    val head = RawHttp.request(port, "HEAD", streamPath, headers = auth(token))
+    assertEquals(200, head.status)
+    assertEquals(provider.audio.size.toString(), head.header("content-length"))
   }
 
   @Test
