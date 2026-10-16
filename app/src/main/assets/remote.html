@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b10">
+<title>SoundWave Remote</title>
+<style>
+  :root{--bg:#0b0b10;--card:#17171f;--card2:#1f1f2a;--text:#f4f4f8;--dim:#a7a7b8;--accent:#7c5cff;--accent2:#00d4a6;--danger:#ff5c7a;--radius:16px}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px 16px 120px}
+  h1{font-size:22px;margin:4px 0 2px} .sub{color:var(--dim);font-size:13px;margin-bottom:16px}
+  .card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+  .row{display:flex;gap:10px;align-items:center} .grow{flex:1}
+  input[type=text],input[type=tel]{width:100%;background:var(--card2);border:1px solid #2c2c3a;color:var(--text);border-radius:12px;padding:12px;font-size:16px}
+  button{background:var(--accent);color:#fff;border:0;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer}
+  button.secondary{background:var(--card2);color:var(--text)} button.danger{background:var(--danger)}
+  button:disabled{opacity:.45}
+  .status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim)}
+  .dot{width:10px;height:10px;border-radius:50%;background:#555}
+  .dot.on{background:var(--accent2)} .dot.err{background:var(--danger)}
+  .track{display:flex;gap:12px;align-items:center;padding:10px;border-radius:12px;cursor:pointer}
+  .track:active,.track:hover{background:var(--card2)} .track.current{outline:1px solid var(--accent)}
+  .track img{width:48px;height:48px;border-radius:8px;object-fit:cover;background:#222}
+  .t-title{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .t-artist{font-size:13px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mini-btn{background:var(--card2);border-radius:10px;padding:8px 10px;font-size:13px}
+  #playerBar{position:fixed;left:0;right:0;bottom:0;background:rgba(18,18,26,.97);border-top:1px solid #262633;padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
+  #playerBar .controls{display:flex;align-items:center;gap:10px}
+  #playerBar button{border-radius:50%;width:44px;height:44px;padding:0;font-size:18px}
+  #playBtn{width:54px;height:54px;font-size:22px;background:var(--accent)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .err{background:#3a1620;border:1px solid var(--danger);color:#ffd7de;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px;display:none}
+  .warn{background:#3a2f16;border:1px solid #b98a1d;color:#ffe9b0;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px;display:none}
+  .hidden{display:none!important} .code{font-family:ui-monospace,monospace;letter-spacing:2px;text-align:center;font-size:22px}
+  .qhead{font-size:13px;color:var(--dim);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.08em}
+  img.artBig{width:100%;max-width:300px;border-radius:16px;display:block;margin:0 auto 10px;background:#222}
+</style>
+</head>
+<body>
+<h1>SoundWave Remote</h1>
+<div class="sub">Plays on this device. SoundWave's own Android player is never touched.</div>
+
+<div class="card">
+  <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Not connected</span></div>
+  <div id="connectForm" style="margin-top:12px">
+    <label class="t-artist" for="baseInput">Bridge address (blank = this address)</label>
+    <input type="text" id="baseInput" placeholder="http://192.168.1.20:8930 or https://….lhr.life" autocomplete="off">
+    <div style="height:10px"></div>
+    <label class="t-artist" for="codeInput">6-digit pairing code from SoundWave → Settings → Remote Web Player</label>
+    <input type="tel" id="codeInput" class="code" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code">
+    <div style="height:12px"></div>
+    <button id="connectBtn" class="grow" style="width:100%">Connect</button>
+  </div>
+  <div id="sessionBox" class="hidden" style="margin-top:12px">
+    <div class="row"><span class="grow t-artist" id="sessionInfo"></span>
+      <button class="secondary" id="disconnectBtn">Disconnect</button></div>
+  </div>
+</div>
+
+<div class="err" id="errorBox"></div>
+<div class="warn" id="warnBox"></div>
+
+<div class="card hidden" id="searchCard">
+  <div class="row">
+    <input type="text" id="searchInput" class="grow" placeholder="Search songs on YouTube Music…" enterkeyhint="search">
+    <button id="searchBtn">Search</button>
+  </div>
+  <div id="results" style="margin-top:8px"></div>
+  <div class="qhead hidden" id="queueHead">Queue</div>
+  <div id="queueList"></div>
+</div>
+
+<div class="card hidden" id="nowCard">
+  <img class="artBig" id="npArt" alt="">
+  <div class="t-title" id="npTitle" style="text-align:center;font-size:18px"></div>
+  <div class="t-artist" id="npArtist" style="text-align:center"></div>
+</div>
+
+<div id="playerBar" class="hidden">
+  <input type="range" id="seek" min="0" max="1000" value="0">
+  <div class="controls">
+    <span class="t-artist" id="curTime">0:00</span>
+    <button class="secondary" id="prevBtn" aria-label="Previous">⏮</button>
+    <button id="playBtn" aria-label="Play or pause">▶</button>
+    <button class="secondary" id="nextBtn" aria-label="Next">⏭</button>
+    <span class="t-artist" id="durTime">0:00</span>
+    <span class="grow"></span>
+    <span class="t-artist" id="npMini"></span>
+  </div>
+</div>
+
+<audio id="audio" preload="metadata" playsinline></audio>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const audio = $("audio");
+const state = {
+  base: sessionStorage.getItem("swRemoteBase") || "",
+  token: sessionStorage.getItem("swRemoteToken") || "",
+  queue: [], index: -1, playing: false, resolving: false, lastReport: 0,
+};
+
+function setStatus(mode, text) {
+  $("statusDot").className = "dot" + (mode === "on" ? " on" : mode === "err" ? " err" : "");
+  $("statusText").textContent = text;
+}
+function showError(msg) { const b = $("errorBox"); if (!msg) { b.style.display = "none"; return; } b.textContent = msg; b.style.display = "block"; }
+function showWarn(msg) { const b = $("warnBox"); if (!msg) { b.style.display = "none"; return; } b.textContent = msg; b.style.display = "block"; }
+function fmt(sec) { if (!isFinite(sec) || sec == null) return "0:00"; sec = Math.max(0, Math.floor(sec)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); }
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {});
+  if (state.token) headers["Authorization"] = "Bearer " + state.token;
+  let body;
+  if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
+  let resp;
+  try {
+    resp = await fetch(state.base + path, { method: opts.method || "GET", headers, body });
+  } catch (e) {
+    throw { code: "NETWORK", message: "Could not reach SoundWave at " + (state.base || location.origin) + ". Check the address and that both devices are connected, then retry." };
+  }
+  let data = null;
+  try { data = await resp.json(); } catch (e) { /* stream or empty */ }
+  if (!resp.ok) {
+    const err = (data && data.error) || { code: "HTTP_" + resp.status, message: "SoundWave returned an error (" + resp.status + ")." };
+    if (err.code === "UNAUTHORIZED") { clearSession(); }
+    throw err;
+  }
+  return data;
+}
+
+function saveSession() {
+  sessionStorage.setItem("swRemoteToken", state.token);
+  sessionStorage.setItem("swRemoteBase", state.base);
+}
+function clearSession() {
+  state.token = ""; sessionStorage.removeItem("swRemoteToken");
+  $("sessionBox").classList.add("hidden"); $("connectForm").classList.remove("hidden");
+  $("searchCard").classList.add("hidden"); setStatus("", "Not connected — pair to continue");
+}
+
+async function checkHealth() {
+  const data = await api("/api/health");
+  if (!data || data.ok !== true || data.service !== "soundwave-remote") {
+    throw { code: "NOT_A_BRIDGE", message: "That address answered, but not as a SoundWave bridge. Check the address and port." };
+  }
+  return data;
+}
+
+async function connect() {
+  showError(""); showWarn("");
+  const rawBase = $("baseInput").value.trim().replace(/\/+$/, "");
+  state.base = rawBase;
+  const code = $("codeInput").value.trim();
+  setStatus("", "Checking bridge…");
+  try {
+    await checkHealth();
+    if (code) {
+      setStatus("", "Pairing…");
+      const paired = await api("/api/pair", { method: "POST", body: { code } });
+      state.token = paired.sessionToken; saveSession();
+    } else if (!state.token) {
+      throw { code: "PAIRING_REQUIRED", message: "Enter the 6-digit pairing code shown in SoundWave." };
+    }
+    const session = await api("/api/session");
+    onConnected(session);
+  } catch (e) {
+    setStatus("err", "Not connected");
+    showError(e.message || "Connection failed.");
+  }
+}
+
+function onConnected(session) {
+  saveSession();
+  setStatus("on", "Connected to SoundWave" + (state.base ? " at " + state.base : ""));
+  $("connectForm").classList.add("hidden");
+  $("sessionBox").classList.remove("hidden");
+  $("sessionInfo").textContent = "Paired session " + (session.session ? session.session.label : "") + " · expires " +
+    (session.session ? new Date(session.session.expiresAtMs).toLocaleTimeString() : "");
+  $("searchCard").classList.remove("hidden");
+  reportState();
+}
+
+async function search() {
+  const q = $("searchInput").value.trim();
+  if (!q) return;
+  showError("");
+  $("results").innerHTML = '<div class="t-artist">Searching SoundWave…</div>';
+  try {
+    const data = await api("/api/search?q=" + encodeURIComponent(q));
+    renderResults(data.results || []);
+  } catch (e) {
+    $("results").innerHTML = "";
+    if (e.code !== "UNAUTHORIZED") showError(e.message || "Search failed.");
+    else showError("Session expired. Pair again to continue.");
+  }
+}
+
+function trackRow(track, idx, list, current) {
+  const row = document.createElement("div");
+  row.className = "track" + (current ? " current" : "");
+  const img = document.createElement("img"); img.alt = ""; if (track.thumbnailUrl) img.src = track.thumbnailUrl;
+  const mid = document.createElement("div"); mid.className = "grow"; mid.style.minWidth = "0";
+  const t = document.createElement("div"); t.className = "t-title"; t.textContent = track.title;
+  const a = document.createElement("div"); a.className = "t-artist"; a.textContent = track.artist + (track.durationSec ? " · " + fmt(track.durationSec) : "");
+  mid.append(t, a);
+  const add = document.createElement("button"); add.className = "mini-btn"; add.textContent = "+ Queue";
+  add.addEventListener("click", (ev) => { ev.stopPropagation(); state.queue.push(track); renderQueue(); reportState(); });
+  row.append(img, mid, add);
+  row.addEventListener("click", () => playFrom(list, idx));
+  return row;
+}
+
+function renderResults(results) {
+  const box = $("results"); box.innerHTML = "";
+  if (!results.length) { box.innerHTML = '<div class="t-artist">No results. Try another search.</div>'; return; }
+  results.forEach((track, i) => box.appendChild(trackRow(track, i, results, false)));
+}
+
+function renderQueue() {
+  const box = $("queueList"); box.innerHTML = "";
+  $("queueHead").classList.toggle("hidden", state.queue.length === 0);
+  state.queue.forEach((track, i) => box.appendChild(trackRow(track, i, state.queue, i === state.index)));
+}
+
+async function playFrom(list, idx) {
+  state.queue = list.slice(); state.index = idx;
+  await playCurrent();
+}
+
+async function playCurrent() {
+  const track = state.queue[state.index];
+  if (!track || state.resolving) return;
+  state.resolving = true;
+  showError(""); showWarn("");
+  renderQueue();
+  $("npTitle").textContent = track.title; $("npArtist").textContent = track.artist;
+  $("npArt").src = track.thumbnailUrl || ""; $("npMini").textContent = track.title;
+  $("nowCard").classList.remove("hidden"); $("playerBar").classList.remove("hidden");
+  try {
+    const resolved = await api("/api/resolve", { method: "POST", body: { trackId: track.id } });
+    if (resolved.safariCompatible === false) {
+      showWarn("SoundWave could only find an Opus/WebM source for this track, which older iPhones cannot play. If it stays silent, pick another track.");
+    }
+    audio.src = state.base + resolved.streamPath + "?t=" + encodeURIComponent(state.token);
+    await audio.play();
+  } catch (e) {
+    if (e.code === "UNAUTHORIZED") showError("Session expired. Pair again to continue.");
+    else showError(e.message || "Could not start this track.");
+  } finally {
+    state.resolving = false;
+    reportState();
+  }
+}
+
+async function next(auto) {
+  if (state.index < state.queue.length - 1) { state.index++; await playCurrent(); }
+  else if (!auto) { showWarn("End of queue."); }
+}
+async function prev() {
+  if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+  if (state.index > 0) { state.index--; await playCurrent(); }
+}
+
+function reportState() {
+  if (!state.token) return;
+  const now = Date.now();
+  if (now - state.lastReport < 800) return;
+  state.lastReport = now;
+  const track = state.queue[state.index] || null;
+  api("/api/state", { method: "POST", body: {
+    track, queue: state.queue, queueIndex: state.index,
+    playing: state.playing, positionMs: Math.floor((audio.currentTime || 0) * 1000),
+  }}).catch(() => {});
+}
+
+$("connectBtn").addEventListener("click", connect);
+$("searchBtn").addEventListener("click", search);
+$("searchInput").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+$("disconnectBtn").addEventListener("click", async () => {
+  try { await api("/api/session", { method: "DELETE" }); } catch (e) { /* already gone */ }
+  audio.pause(); audio.removeAttribute("src"); clearSession();
+});
+$("playBtn").addEventListener("click", async () => {
+  if (state.index < 0 && state.queue.length) { state.index = 0; await playCurrent(); return; }
+  if (audio.paused) { try { await audio.play(); } catch (e) { showError("Tap play again — the browser blocked autoplay."); } }
+  else audio.pause();
+});
+$("nextBtn").addEventListener("click", () => next(false));
+$("prevBtn").addEventListener("click", prev);
+$("seek").addEventListener("input", () => {
+  if (isFinite(audio.duration) && audio.duration > 0) audio.currentTime = (Number($("seek").value) / 1000) * audio.duration;
+});
+
+audio.addEventListener("play", () => { state.playing = true; $("playBtn").textContent = "⏸"; reportState(); updateMediaSession(); });
+audio.addEventListener("pause", () => { state.playing = false; $("playBtn").textContent = "▶"; reportState(); });
+audio.addEventListener("ended", () => next(true));
+audio.addEventListener("timeupdate", () => {
+  if (isFinite(audio.duration) && audio.duration > 0) $("seek").value = String(Math.floor((audio.currentTime / audio.duration) * 1000));
+  $("curTime").textContent = fmt(audio.currentTime); $("durTime").textContent = fmt(audio.duration);
+});
+audio.addEventListener("seeked", reportState);
+audio.addEventListener("error", async () => {
+  if (state.index < 0) return;
+  // The bridge re-resolves expired sources; one automatic retry covers a
+  // source that died between resolve and play.
+  showWarn("Stream interrupted — asking SoundWave for a fresh source…");
+  const pos = audio.currentTime || 0;
+  const track = state.queue[state.index];
+  try {
+    const resolved = await api("/api/resolve", { method: "POST", body: { trackId: track.id } });
+    audio.src = state.base + resolved.streamPath + "?t=" + encodeURIComponent(state.token);
+    audio.currentTime = pos;
+    await audio.play();
+    showWarn("");
+  } catch (e) {
+    showError(e.message || "Playback failed. The source may have expired — press play to retry.");
+  }
+});
+
+function updateMediaSession() {
+  if (!("mediaSession" in navigator)) return;
+  const track = state.queue[state.index]; if (!track) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: track.title, artist: track.artist, album: track.album || "",
+    artwork: track.thumbnailUrl ? [{ src: track.thumbnailUrl, sizes: "512x512" }] : [],
+  });
+  navigator.mediaSession.setActionHandler("play", () => audio.play());
+  navigator.mediaSession.setActionHandler("pause", () => audio.pause());
+  navigator.mediaSession.setActionHandler("nexttrack", () => next(false));
+  navigator.mediaSession.setActionHandler("previoustrack", prev);
+}
+
+// Resume an existing session on load (tokens live in sessionStorage only).
+(async () => {
+  $("baseInput").value = state.base;
+  if (!state.token) return;
+  try {
+    await checkHealth();
+    const session = await api("/api/session");
+    onConnected(session);
+  } catch (e) { clearSession(); }
+})();
+</script>
+</body>
+</html>

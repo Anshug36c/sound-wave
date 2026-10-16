@@ -32,6 +32,8 @@ brotli = "0.1.2"
 desugaring = "2.1.5"
 junit = "4.13.2"
 timber = "5.0.1"
+jsch = "0.2.26"
+zxing = "3.5.3"
 materialKolor = "4.1.1"
 kuromojiIpadic = "0.9.0"
 newpipeextractor = "v0.26.1"
@@ -124,6 +126,9 @@ brotli = { module = "org.brotli:dec", version.ref = "brotli" }
 desugaring = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "desugaring" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
+
+jsch = { module = "com.github.mwiede:jsch", version.ref = "jsch" }
+zxing = { module = "com.google.zxing:core", version.ref = "zxing" }
 
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 

@@ -181,6 +181,16 @@ fun SettingsScreen(
           )
         )
       }
+      if ("remote web player".contains(searchLower)) {
+        add(
+          Material3SettingsItem(
+            icon = painterResource(R.drawable.cast),
+            title = { Text("Remote Web Player") },
+            description = { Text("Play SoundWave music in your browser, on any network") },
+            onClick = { navController.navigate("settings/remote") }
+          )
+        )
+      }
       if (
         contentText.lowercase().contains(searchLower) ||
           contentDesc.lowercase().contains(searchLower)

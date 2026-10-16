@@ -402,6 +402,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Remote Web Player bridge: serves the browser player + API.
+             Deliberately separate from MusicService; it never plays audio
+             on this device. -->
+        <service
+            android:name=".remote.RemoteBridgeService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Receiver for Listen Together notification actions (Approve/Reject) -->
         <receiver
             android:name=".listentogether.ListenTogetherActionReceiver"
