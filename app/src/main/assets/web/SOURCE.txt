@@ -1,0 +1,10 @@
+Soundwave Web build, bundled so the phone can serve it (Settings -> Integrations ->
+Listen Together -> "Serve Soundwave Web from this phone").
+
+Source repo : https://github.com/Anshug36c/soundwave-site  (branch main)
+Built with  : npm ci && npx vite build   (Vite base './' -> relative asset URLs, so the
+              bundle works when served from this phone's http://<ip>:<port>/ root)
+Refresh     : re-run the build in soundwave-site and copy dist/* here.
+
+Only the static site lives here. The music itself is streamed by PhoneWebServer from the
+phone's own library at /api/audio (local content://file: tracks only).

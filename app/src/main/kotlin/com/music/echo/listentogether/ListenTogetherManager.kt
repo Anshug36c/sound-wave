@@ -266,6 +266,7 @@ constructor(
       oldConnection?.onRestartSong = null
 
       playerConnection = connection
+      PhoneWebServer.attach(connection)
       refreshSyncCapabilities()
     } catch (e: Exception) {
       Timber.tag(TAG).e(e, "Error in setPlayerConnection")

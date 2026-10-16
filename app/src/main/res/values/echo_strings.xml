@@ -669,6 +669,11 @@
     <string name="listen_together_auto_approval_desc">Automatically approve join requests instead of reviewing them manually</string>
     <string name="listen_together_stream_audio">Stream audio to web listeners</string>
     <string name="listen_together_stream_audio_desc">Send the current track\'s audio to connected Soundwave Web guests so they can hear songs they don\'t own. Local library files only; increases bandwidth.</string>
+    <string name="listen_together_serve_web">Serve Soundwave Web from this phone</string>
+    <string name="listen_together_serve_web_desc">Runs a small server on your Wi‑Fi that hosts the website and streams this phone\'s music to it. Open the address below on another device on the same network and enter the code — no internet or relay needed.</string>
+    <string name="listen_together_serve_web_code">Code: %1$s — tap to copy the address and code</string>
+    <string name="listen_together_serve_web_error">Server could not start</string>
+    <string name="listen_together_serve_web_copied">Address and code copied</string>
     <string name="listen_together_allow_participant_control">Allow participants to control music</string>
     <string name="listen_together_allow_participant_control_desc">Let guests play, pause, skip, and change the queue</string>
     <string name="listen_together_participant_control_enabled">Participants can control music</string>
