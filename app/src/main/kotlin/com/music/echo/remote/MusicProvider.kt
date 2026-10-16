@@ -23,6 +23,24 @@ interface MusicProvider {
    */
   fun recommendations(limit: Int): List<RemoteTrack>
 
+  /** Home-feed shelves (title + mixed song/album/artist/playlist items). */
+  fun homeSections(limitPerSection: Int): List<RemoteSection>
+
+  /** Typed search: [type] is one of song, album, artist, playlist. */
+  fun searchItems(query: String, type: String, limit: Int): List<RemoteItem>
+
+  /** Album, artist or playlist page. [kind] is album, artist or playlist. */
+  fun detail(kind: String, id: String): RemoteDetail
+
+  /** Charts shelves (top songs, trending…). */
+  fun charts(): List<RemoteSection>
+
+  /** Explore shelves: new-release albums + mood/genre tiles. */
+  fun explore(): List<RemoteSection>
+
+  /** Generic browse (mood tiles, artist "more" shelves…). */
+  fun browse(browseId: String, params: String?): List<RemoteSection>
+
   /** Metadata for a known track id, or null when unknown. */
   fun track(trackId: String): RemoteTrack?
 

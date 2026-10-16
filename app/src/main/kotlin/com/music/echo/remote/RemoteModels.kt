@@ -152,3 +152,62 @@ class RemoteException(
   fun toJson(): Map<String, Any?> =
     MiniJson.obj("error" to MiniJson.obj("code" to code, "message" to (message ?: code)))
 }
+
+/** A browsable catalogue entry: song, album, artist, playlist or mood tile. */
+data class RemoteItem(
+  val type: String,
+  val id: String,
+  val title: String,
+  val subtitle: String? = null,
+  val thumbnailUrl: String? = null,
+  val durationSec: Int? = null,
+  val explicit: Boolean = false,
+  /** Type-specific extra: album year, playlist song count, mood colour (#rrggbb). */
+  val extra: String? = null,
+) {
+  fun toJson(): Map<String, Any?> =
+    MiniJson.obj(
+      "type" to type,
+      "id" to id,
+      "title" to title,
+      "subtitle" to subtitle,
+      "thumbnailUrl" to thumbnailUrl,
+      "durationSec" to durationSec,
+      "explicit" to explicit,
+      "extra" to extra,
+    )
+}
+
+/** A titled shelf of catalogue entries (home feed, charts, artist page…). */
+data class RemoteSection(
+  val title: String,
+  val label: String? = null,
+  val items: List<RemoteItem> = emptyList(),
+) {
+  fun toJson(): Map<String, Any?> =
+    MiniJson.obj("title" to title, "label" to label, "items" to items.map { it.toJson() })
+}
+
+/** An album / artist / playlist page: header + playable songs + more shelves. */
+data class RemoteDetail(
+  val kind: String,
+  val id: String,
+  val title: String,
+  val subtitle: String? = null,
+  val description: String? = null,
+  val thumbnailUrl: String? = null,
+  val songs: List<RemoteTrack> = emptyList(),
+  val sections: List<RemoteSection> = emptyList(),
+) {
+  fun toJson(): Map<String, Any?> =
+    MiniJson.obj(
+      "kind" to kind,
+      "id" to id,
+      "title" to title,
+      "subtitle" to subtitle,
+      "description" to description,
+      "thumbnailUrl" to thumbnailUrl,
+      "songs" to songs.map { it.toJson() },
+      "sections" to sections.map { it.toJson() },
+    )
+}

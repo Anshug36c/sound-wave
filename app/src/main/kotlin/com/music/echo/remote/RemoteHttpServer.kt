@@ -30,6 +30,9 @@ import kotlin.math.min
  * - `DELETE /api/session`      revoke own session (Bearer)
  * - `GET  /api/search?q=`      search (Bearer)
  * - `GET  /api/recommendations` home-feed song recommendations (Bearer)
+ * - `GET  /api/home`, `/api/charts`, `/api/explore`, `/api/browse` catalogue shelves (Bearer)
+ * - `GET  /api/album|artist|playlist/<id>` detail pages (Bearer)
+ * - `GET  /api/search?q=&type=` typed search: song, album, artist, playlist (Bearer)
  * - `GET  /api/track/{id}`     track metadata (Bearer)
  * - `POST /api/resolve`        `{trackId}` -> expiring stream path (Bearer)
  * - `GET|HEAD /api/stream/{grantId}`  audio bytes, Range-capable (Bearer or
@@ -233,13 +236,65 @@ class RemoteHttpServer(
           throw RemoteException.validation("Search query must be 1-$MAX_QUERY_LENGTH characters.")
         }
         val limit = (request.queryParam("limit")?.toIntOrNull() ?: 20).coerceIn(1, 30)
-        val tracks = provider.search(query, limit)
-        writeJson(
-          output,
-          200,
-          MiniJson.obj("query" to query, "results" to tracks.map { it.toJson() }),
-          request,
-        )
+        val type = request.queryParam("type")?.trim()?.lowercase() ?: "song"
+        if (type == "song") {
+          val tracks = provider.search(query, limit)
+          writeJson(
+            output,
+            200,
+            MiniJson.obj("query" to query, "type" to type, "results" to tracks.map { it.toJson() }),
+            request,
+          )
+        } else {
+          if (type !in SEARCH_TYPES) {
+            throw RemoteException.validation("Unknown search type: $type.")
+          }
+          val items = provider.searchItems(query, type, limit)
+          writeJson(
+            output,
+            200,
+            MiniJson.obj("query" to query, "type" to type, "results" to items.map { it.toJson() }),
+            request,
+          )
+        }
+      }
+      path == "/api/home" -> {
+        requireMethod(request, "GET")
+        rateLimit(session.token, "browse", BROWSE_PER_MINUTE)
+        val sections = provider.homeSections(HOME_SECTION_LIMIT)
+        writeJson(output, 200, MiniJson.obj("sections" to sections.map { it.toJson() }), request)
+      }
+      path == "/api/charts" -> {
+        requireMethod(request, "GET")
+        rateLimit(session.token, "browse", BROWSE_PER_MINUTE)
+        val sections = provider.charts()
+        writeJson(output, 200, MiniJson.obj("sections" to sections.map { it.toJson() }), request)
+      }
+      path == "/api/explore" -> {
+        requireMethod(request, "GET")
+        rateLimit(session.token, "browse", BROWSE_PER_MINUTE)
+        val sections = provider.explore()
+        writeJson(output, 200, MiniJson.obj("sections" to sections.map { it.toJson() }), request)
+      }
+      path == "/api/browse" -> {
+        requireMethod(request, "GET")
+        rateLimit(session.token, "browse", BROWSE_PER_MINUTE)
+        val browseId = request.queryParam("id")?.trim().orEmpty()
+        validateBrowseId(browseId)
+        val params = request.queryParam("params")?.takeIf { it.length <= MAX_PARAMS_LENGTH }
+        val sections = provider.browse(browseId, params)
+        writeJson(output, 200, MiniJson.obj("sections" to sections.map { it.toJson() }), request)
+      }
+      path.startsWith("/api/album/") ||
+        path.startsWith("/api/artist/") ||
+        path.startsWith("/api/playlist/") -> {
+        requireMethod(request, "GET")
+        rateLimit(session.token, "browse", BROWSE_PER_MINUTE)
+        val kind = path.removePrefix("/api/").substringBefore('/')
+        val id = path.removePrefix("/api/$kind/")
+        validateBrowseId(id)
+        val detail = provider.detail(kind, id)
+        writeJson(output, 200, MiniJson.obj("detail" to detail.toJson()), request)
       }
       path.startsWith("/api/track/") -> {
         requireMethod(request, "GET")
@@ -667,6 +722,10 @@ class RemoteHttpServer(
     }
   }
 
+  private fun validateBrowseId(id: String) {
+    if (!BROWSE_ID_REGEX.matches(id)) throw RemoteException.validation("Invalid browse id.")
+  }
+
   companion object {
     const val API_VERSION = 1
     const val DEFAULT_PORT = 8930
@@ -689,6 +748,11 @@ class RemoteHttpServer(
     private const val STREAM_BUFFER_BYTES = 64 * 1024
     private const val MAX_CONCURRENT_STREAMS = 3
     private const val SEARCH_PER_MINUTE = 30
+    private const val BROWSE_PER_MINUTE = 30
+    private const val HOME_SECTION_LIMIT = 20
+    private const val MAX_PARAMS_LENGTH = 300
+    private val SEARCH_TYPES = setOf("album", "artist", "playlist")
+    private val BROWSE_ID_REGEX = Regex("^[A-Za-z0-9_-]{4,90}$")
     private const val RESOLVE_PER_MINUTE = 30
 
     private val RANGE_REGEX = Regex("""bytes=(\d*)-(\d*)""")

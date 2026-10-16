@@ -54,6 +54,27 @@ class RemoteHttpServerTest {
 
     override fun recommendations(limit: Int): List<RemoteTrack> = tracks.take(limit)
 
+    override fun homeSections(limitPerSection: Int): List<RemoteSection> =
+      listOf(
+        RemoteSection("Quick picks", null, tracks.map { RemoteItem("song", it.id, it.title, it.artist, null, it.durationSec) }),
+        RemoteSection("Albums", null, listOf(RemoteItem("album", "MPREb_test", "Test Album", "Rick Astley", null, null, false, "1987"))),
+      )
+
+    override fun searchItems(query: String, type: String, limit: Int): List<RemoteItem> =
+      listOf(RemoteItem(type, "MPREb_test", "Typed $type", "Tester"))
+
+    override fun detail(kind: String, id: String): RemoteDetail =
+      RemoteDetail(kind, id, "Detail $kind", "Tester", null, null, tracks, emptyList())
+
+    override fun charts(): List<RemoteSection> =
+      listOf(RemoteSection("Top songs", "top", tracks.map { RemoteItem("song", it.id, it.title, it.artist) }))
+
+    override fun explore(): List<RemoteSection> =
+      listOf(RemoteSection("Moods", null, listOf(RemoteItem("mood", "FEmusic_moods|abc", "Focus", null, null, null, false, "#4455aa"))))
+
+    override fun browse(browseId: String, params: String?): List<RemoteSection> =
+      listOf(RemoteSection("Browsed", null, listOf(RemoteItem("playlist", "VLPLtest", "Mood Mix", "YouTube Music"))))
+
     override fun track(trackId: String): RemoteTrack? = tracks.find { it.id == trackId }
 
     override fun resolve(trackId: String): ResolvedSource {
@@ -184,6 +205,40 @@ class RemoteHttpServerTest {
     val recs = RawHttp.request(port, "GET", "/api/recommendations", headers = auth(token))
     assertEquals(recs.text(), 200, recs.status)
     assertTrue(recs.text().contains("Never Gonna Give You Up"))
+  }
+
+  @Test
+  fun catalogEndpointsRequireAuthAndReturnShelves() {
+    assertEquals(401, RawHttp.request(port, "GET", "/api/home").status)
+    assertEquals(401, RawHttp.request(port, "GET", "/api/album/MPREb_test").status)
+    val token = pair()
+
+    val home = RawHttp.request(port, "GET", "/api/home", headers = auth(token))
+    assertEquals(home.text(), 200, home.status)
+    assertTrue(home.text().contains("Quick picks"))
+    assertTrue(home.text().contains("\"type\":\"album\""))
+
+    val typed = RawHttp.request(port, "GET", "/api/search?q=x&type=artist", headers = auth(token))
+    assertEquals(typed.text(), 200, typed.status)
+    assertTrue(typed.text().contains("Typed artist"))
+
+    val badType = RawHttp.request(port, "GET", "/api/search?q=x&type=bogus", headers = auth(token))
+    assertEquals(400, badType.status)
+
+    val album = RawHttp.request(port, "GET", "/api/album/MPREb_test", headers = auth(token))
+    assertEquals(album.text(), 200, album.status)
+    assertTrue(album.text().contains("Detail album"))
+    assertTrue(album.text().contains("Never Gonna Give You Up"))
+
+    val charts = RawHttp.request(port, "GET", "/api/charts", headers = auth(token))
+    assertTrue(charts.text().contains("Top songs"))
+
+    val mood = RawHttp.request(port, "GET", "/api/browse?id=FEmusic_moods&params=abc", headers = auth(token))
+    assertEquals(mood.text(), 200, mood.status)
+    assertTrue(mood.text().contains("Mood Mix"))
+
+    val badId = RawHttp.request(port, "GET", "/api/browse?id=..%2Fevil", headers = auth(token))
+    assertEquals(400, badId.status)
   }
 
   @Test

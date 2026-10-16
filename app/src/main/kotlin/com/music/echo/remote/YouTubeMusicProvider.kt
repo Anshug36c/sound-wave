@@ -1,7 +1,11 @@
 package echo.music.iad1tya.remote
 
 import com.music.innertube.YouTube
+import com.music.innertube.models.AlbumItem
+import com.music.innertube.models.ArtistItem
+import com.music.innertube.models.PlaylistItem
 import com.music.innertube.models.SongItem
+import com.music.innertube.models.YTItem
 import echo.music.iad1tya.utils.InnerTubeXResolver
 import echo.music.iad1tya.utils.YTPlayerUtils
 import java.util.concurrent.ConcurrentHashMap
@@ -83,6 +87,183 @@ class YouTubeMusicProvider : MusicProvider {
     tracks.forEach { trackCache[it.id] = it }
     return tracks
   }
+
+
+  override fun homeSections(limitPerSection: Int): List<RemoteSection> {
+    val page =
+      runBlocking(Dispatchers.IO) {
+        withTimeoutOrNull(BROWSE_TIMEOUT_MS) { YouTube.home().getOrNull() }
+      } ?: throw browseFailed("home feed")
+    return page.sections.mapNotNull { section ->
+      val items = section.items.mapNotNull { it.toRemoteItem() }.take(limitPerSection)
+      if (items.isEmpty()) null else RemoteSection(section.title, section.label, items)
+    }
+  }
+
+  override fun searchItems(query: String, type: String, limit: Int): List<RemoteItem> {
+    val filter =
+      when (type) {
+        "album" -> YouTube.SearchFilter.FILTER_ALBUM
+        "artist" -> YouTube.SearchFilter.FILTER_ARTIST
+        "playlist" -> YouTube.SearchFilter.FILTER_FEATURED_PLAYLIST
+        else -> YouTube.SearchFilter.FILTER_SONG
+      }
+    val result =
+      runBlocking(Dispatchers.IO) {
+        withTimeoutOrNull(SEARCH_TIMEOUT_MS) { YouTube.search(query, filter).getOrNull() }
+      } ?: throw RemoteException("SEARCH_FAILED", 502, "Search failed. Check the phone's connection and try again.")
+    return result.items.mapNotNull { it.toRemoteItem() }.distinctBy { it.type + it.id }.take(limit)
+  }
+
+  override fun detail(kind: String, id: String): RemoteDetail {
+    return when (kind) {
+      "album" -> {
+        val page =
+          runBlocking(Dispatchers.IO) {
+            withTimeoutOrNull(BROWSE_TIMEOUT_MS) { YouTube.album(id).getOrNull() }
+          } ?: throw browseFailed("album")
+        val songs = page.songs.map { it.toRemoteTrack() }
+        songs.forEach { trackCache[it.id] = it }
+        val sections = buildList {
+          if (page.otherVersions.isNotEmpty()) {
+            add(RemoteSection("Other versions", null, page.otherVersions.mapNotNull { it.toRemoteItem() }))
+          }
+          if (page.releasesForYou.isNotEmpty()) {
+            add(RemoteSection("You might also like", null, page.releasesForYou.mapNotNull { it.toRemoteItem() }))
+          }
+        }
+        RemoteDetail(
+          kind = "album",
+          id = id,
+          title = page.album.title,
+          subtitle = page.album.artists?.joinToString(", ") { it.name },
+          description = page.description,
+          thumbnailUrl = page.album.thumbnail,
+          songs = songs,
+          sections = sections,
+        )
+      }
+      "artist" -> {
+        val page =
+          runBlocking(Dispatchers.IO) {
+            withTimeoutOrNull(BROWSE_TIMEOUT_MS) { YouTube.artist(id).getOrNull() }
+          } ?: throw browseFailed("artist")
+        val sections =
+          page.sections.mapNotNull { section ->
+            val items = section.items.mapNotNull { it.toRemoteItem() }
+            if (items.isEmpty()) null else RemoteSection(section.title, null, items)
+          }
+        val songs =
+          page.sections.flatMap { it.items }.filterIsInstance<SongItem>().distinctBy { it.id }
+            .map { it.toRemoteTrack() }
+        songs.forEach { trackCache[it.id] = it }
+        RemoteDetail(
+          kind = "artist",
+          id = id,
+          title = page.artist.title,
+          subtitle = page.subscriberCountText ?: page.monthlyListenerCount,
+          description = page.description,
+          thumbnailUrl = page.artist.thumbnail,
+          songs = songs,
+          sections = sections,
+        )
+      }
+      else -> {
+        val page =
+          runBlocking(Dispatchers.IO) {
+            withTimeoutOrNull(BROWSE_TIMEOUT_MS) { YouTube.playlist(id).getOrNull() }
+          } ?: throw browseFailed("playlist")
+        val songs = page.songs.map { it.toRemoteTrack() }
+        songs.forEach { trackCache[it.id] = it }
+        val sections = buildList {
+          val related = page.related.orEmpty().mapNotNull { it.toRemoteItem() }
+          if (related.isNotEmpty()) add(RemoteSection("Related", null, related))
+        }
+        RemoteDetail(
+          kind = "playlist",
+          id = id,
+          title = page.playlist.title,
+          subtitle = page.playlist.author?.name,
+          thumbnailUrl = page.playlist.thumbnail,
+          songs = songs,
+          sections = sections,
+        )
+      }
+    }
+  }
+
+  override fun charts(): List<RemoteSection> {
+    val page =
+      runBlocking(Dispatchers.IO) {
+        withTimeoutOrNull(BROWSE_TIMEOUT_MS) { YouTube.getChartsPage().getOrNull() }
+      } ?: throw browseFailed("charts")
+    return page.sections.mapNotNull { section ->
+      val items = section.items.mapNotNull { it.toRemoteItem() }
+      if (items.isEmpty()) null else RemoteSection(section.title, section.chartType.name.lowercase(), items)
+    }
+  }
+
+  override fun explore(): List<RemoteSection> {
+    val page =
+      runBlocking(Dispatchers.IO) {
+        withTimeoutOrNull(BROWSE_TIMEOUT_MS) { YouTube.explore().getOrNull() }
+      } ?: throw browseFailed("explore")
+    val sections = mutableListOf<RemoteSection>()
+    if (page.newReleaseAlbums.isNotEmpty()) {
+      sections +=
+        RemoteSection("New releases", null, page.newReleaseAlbums.mapNotNull { it.toRemoteItem() })
+    }
+    page.moodAndGenres.forEach { group ->
+      val items =
+        group.items.map { item ->
+          RemoteItem(
+            type = "mood",
+            id = item.endpoint.browseId + "|" + (item.endpoint.params ?: ""),
+            title = item.title,
+            extra = "#" + (item.stripeColor and 0xFFFFFF).toString(16).padStart(6, '0'),
+          )
+        }
+      if (items.isNotEmpty()) sections += RemoteSection(group.title, null, items)
+    }
+    return sections
+  }
+
+  override fun browse(browseId: String, params: String?): List<RemoteSection> {
+    val result =
+      runBlocking(Dispatchers.IO) {
+        withTimeoutOrNull(BROWSE_TIMEOUT_MS) { YouTube.browse(browseId, params).getOrNull() }
+      } ?: throw browseFailed("browse")
+    return result.items.mapNotNull { group ->
+      val items = group.items.mapNotNull { it.toRemoteItem() }
+      if (items.isEmpty()) null else RemoteSection(group.title ?: result.title ?: "Browse", null, items)
+    }
+  }
+
+  private fun browseFailed(what: String): RemoteException =
+    RemoteException("BROWSE_FAILED", 502, "SoundWave could not load the $what. Check the phone's connection and try again.")
+
+  private fun SongItem.toRemoteTrack(): RemoteTrack =
+    RemoteTrack(
+      id = id,
+      title = title,
+      artist = artists.joinToString(", ") { it.name },
+      album = album?.name,
+      durationSec = duration,
+      thumbnailUrl = thumbnail.takeIf { it.isNotBlank() },
+      explicit = explicit,
+    )
+
+  private fun YTItem.toRemoteItem(): RemoteItem? =
+    when (this) {
+      is SongItem ->
+        RemoteItem("song", id, title, artists.joinToString(", ") { it.name }, thumbnail, duration, explicit, album?.name)
+      is AlbumItem ->
+        RemoteItem("album", browseId, title, artists?.joinToString(", ") { it.name }, thumbnail, null, explicit, year?.toString())
+      is ArtistItem -> RemoteItem("artist", id, title, null, thumbnail)
+      is PlaylistItem ->
+        RemoteItem("playlist", id, title, author?.name, thumbnail, null, false, songCountText)
+      else -> null
+    }
 
   override fun track(trackId: String): RemoteTrack? {
     trackCache[trackId]?.let { return it }
@@ -187,6 +368,7 @@ class YouTubeMusicProvider : MusicProvider {
   companion object {
     private const val TAG = "RemoteProvider"
     private const val SEARCH_TIMEOUT_MS = 25_000L
+    private const val BROWSE_TIMEOUT_MS = 45_000L
     private const val METADATA_TIMEOUT_MS = 20_000L
     private const val RESOLVE_TIMEOUT_MS = 60_000L
     private const val DEFAULT_EXPIRY_MS = 5 * 60 * 60 * 1000L
