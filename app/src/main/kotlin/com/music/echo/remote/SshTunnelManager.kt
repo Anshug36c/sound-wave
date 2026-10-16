@@ -152,8 +152,17 @@ class SshTunnelManager(
   private fun finishConnect(s: Session, localPort: Int, provider: Provider): String {
     s.setPortForwardingR(80, "127.0.0.1", localPort)
     val channel = s.openChannel("shell") as ChannelShell
+    // Do not request a pty: localhost.run's SSH server never replies to
+    // channel requests (pty/shell), which makes JSch throw
+    // "channel request: timeout" even though the session and its banner
+    // stream work fine. Open without a pty and tolerate that exception.
+    channel.setPty(false)
     val input = channel.inputStream
-    channel.connect(15_000)
+    try {
+      channel.connect(10_000)
+    } catch (e: Exception) {
+      Timber.tag(TAG).d("Shell request unanswered by ${provider.label} (expected there): ${e.message}")
+    }
     val deadline = System.currentTimeMillis() + URL_WAIT_MS
     val text = StringBuilder()
     val buffer = ByteArray(4096)
@@ -174,15 +183,21 @@ class SshTunnelManager(
   }
 
   private fun findPublicUrl(text: String, provider: Provider): String? {
+    // Prefer the explicit assignment lines each service prints; bare URLs in
+    // banners include help/console links that are NOT our tunnel.
+    SERVEO_FORWARD_REGEX.find(text)?.let { return it.groupValues[1] }
+    LOCALHOST_RUN_REGEX.find(text)?.let { return "https://" + it.groupValues[1] }
     for (match in URL_REGEX.findAll(text)) {
       val host = match.groupValues[1].lowercase()
+      val subdomain = host.substringBefore('.')
+      if (subdomain in BANNER_LINK_SUBDOMAINS) continue
       val accepted =
         when (provider) {
           Provider.LOCALHOST_RUN ->
             host.endsWith(".lhr.life") || host.endsWith(".lhr.rocks") || host.endsWith(".localhost.run")
           Provider.SERVEO -> host.endsWith(".serveo.net")
         }
-      if (accepted) return "https://$host"
+      if (accepted && host.count { it == '.' } >= 2) return "https://$host"
     }
     return null
   }
@@ -196,5 +211,9 @@ class SshTunnelManager(
     private const val TAG = "RemoteTunnel"
     private const val URL_WAIT_MS = 60_000L
     private val URL_REGEX = Regex("""https://([a-zA-Z0-9.-]+)""")
+    private val SERVEO_FORWARD_REGEX = Regex("""Forwarding HTTP traffic from (https://\S+)""")
+    private val LOCALHOST_RUN_REGEX =
+      Regex("""([a-zA-Z0-9.-]+\.(?:lhr\.life|lhr\.rocks)) tunneled with tls termination""")
+    private val BANNER_LINK_SUBDOMAINS = setOf("console", "www", "admin", "docs", "dashboard", "status")
   }
 }
