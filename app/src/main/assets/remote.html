@@ -116,10 +116,17 @@ async function api(path, opts = {}) {
   let body;
   if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
   let resp;
+  const ctrl = opts.timeoutMs ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), opts.timeoutMs) : null;
   try {
-    resp = await fetch(state.base + path, { method: opts.method || "GET", headers, body });
+    resp = await fetch(state.base + path, { method: opts.method || "GET", headers, body, signal: ctrl ? ctrl.signal : undefined });
   } catch (e) {
+    if (ctrl && e && e.name === "AbortError") {
+      throw { code: "TIMEOUT", message: "SoundWave took too long to prepare this track. Check the phone's connection, then press play to retry." };
+    }
     throw { code: "NETWORK", message: "Could not reach SoundWave at " + (state.base || location.origin) + ". Check the address and that both devices are connected, then retry." };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   let data = null;
   try { data = await resp.json(); } catch (e) { /* stream or empty */ }
@@ -240,12 +247,16 @@ async function playCurrent() {
   $("npArt").src = track.thumbnailUrl || ""; $("npMini").textContent = track.title;
   $("nowCard").classList.remove("hidden"); $("playerBar").classList.remove("hidden");
   try {
-    const resolved = await api("/api/resolve", { method: "POST", body: { trackId: track.id } });
+    showWarn("Asking SoundWave to prepare this track…");
+    const resolved = await api("/api/resolve", { method: "POST", body: { trackId: track.id }, timeoutMs: 120000 });
     if (resolved.safariCompatible === false) {
       showWarn("SoundWave could only find an Opus/WebM source for this track, which older iPhones cannot play. If it stays silent, pick another track.");
+    } else {
+      showWarn("Loading audio…");
     }
     audio.src = state.base + resolved.streamPath + "?t=" + encodeURIComponent(state.token);
     await audio.play();
+    if (resolved.safariCompatible !== false) showWarn("");
   } catch (e) {
     if (e.code === "UNAUTHORIZED") showError("Session expired. Pair again to continue.");
     else showError(e.message || "Could not start this track.");
@@ -303,7 +314,8 @@ audio.addEventListener("timeupdate", () => {
 });
 audio.addEventListener("seeked", reportState);
 audio.addEventListener("error", async () => {
-  if (state.index < 0) return;
+  if (state.index < 0 || state.streamRetrying) return;
+  state.streamRetrying = true;
   // The bridge re-resolves expired sources; one automatic retry covers a
   // source that died between resolve and play.
   showWarn("Stream interrupted — asking SoundWave for a fresh source…");
@@ -317,6 +329,8 @@ audio.addEventListener("error", async () => {
     showWarn("");
   } catch (e) {
     showError(e.message || "Playback failed. The source may have expired — press play to retry.");
+  } finally {
+    state.streamRetrying = false;
   }
 });
 

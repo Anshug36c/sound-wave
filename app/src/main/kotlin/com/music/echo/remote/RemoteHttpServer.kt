@@ -363,6 +363,12 @@ class RemoteHttpServer(
     grant: RemoteSessionManager.StreamGrant,
     rangeHeader: String?,
   ) {
+    // HEAD and suffix-range requests keep the single-request path below;
+    // ordinary GETs go through bounded-range stitching (see streamStitched).
+    if (request.method == "GET" && rangeHeader?.trim()?.startsWith("bytes=-") != true) {
+      streamStitched(request, output, grant, rangeHeader)
+      return
+    }
     var source = grant.source
     val upstreamRange = rangeHeader ?: "bytes=0-"
     var upstream = openUpstream(source, upstreamRange, request.method == "HEAD")
@@ -427,6 +433,254 @@ class RemoteHttpServer(
     }
   }
 
+  /**
+   * Serves a GET by fetching the upstream in bounded ranges and stitching
+   * them into one continuous response.
+   *
+   * Why: googlevideo paces a single open-ended response down to roughly
+   * playback speed (~15 kB/s — see ChunkedDataSource in the phone player,
+   * which exists for exactly this reason). A browser that asks the bridge
+   * for `bytes=0-` would otherwise receive audio slower than it consumes
+   * it and never build a buffer: the track appears stuck before the first
+   * second. Bounded ranges are served at line rate, so the bridge fetches
+   * the file the same way the phone's own player does and hands the
+   * browser one ordinary 200/206 response.
+   */
+  private fun streamStitched(
+    request: Request,
+    output: OutputStream,
+    grant: RemoteSessionManager.StreamGrant,
+    rangeHeader: String?,
+  ) {
+    var source = grant.source
+    val chunkBytes = upstreamChunkBytes(source)
+    val (reqStart, reqEnd) = parseRangeBounds(rangeHeader) // reqEnd null = to EOF
+    val firstEnd = minOf(reqEnd ?: Long.MAX_VALUE, reqStart + chunkBytes - 1)
+    var upstream = openUpstream(source, "bytes=$reqStart-$firstEnd", headOnly = false)
+    if (upstream.status == 403 || upstream.status == 410) {
+      // Signed URLs expire; re-resolve once and retry before bothering the user.
+      upstream.close()
+      val refreshed =
+        try {
+          provider.resolve(grant.trackId)
+        } catch (e: Exception) {
+          null
+        }
+      if (refreshed != null) {
+        grant.source = refreshed
+        source = refreshed
+        upstream = openUpstream(source, "bytes=$reqStart-$firstEnd", headOnly = false)
+      }
+    }
+    try {
+      when (upstream.status) {
+        416 -> {
+          val headers = LinkedHashMap<String, String>()
+          upstream.contentRange?.let { headers["Content-Range"] = it }
+          headers["Content-Length"] = "0"
+          writeHead(output, 416, headers)
+          return
+        }
+        403, 410 -> throw RemoteException.upstreamExpired()
+        200, 206 -> Unit
+        else ->
+          throw RemoteException(
+            "UPSTREAM_ERROR",
+            502,
+            "The audio source returned an error (${upstream.status}). Try again.",
+          )
+      }
+      val contentType = upstream.contentType ?: source.contentType
+      if (upstream.status == 200) {
+        // Upstream ignored the Range header: skip to the requested start
+        // and serve from the full body.
+        val total = if (upstream.contentLength >= 0) upstream.contentLength else null
+        val headers = LinkedHashMap<String, String>()
+        headers["Content-Type"] = contentType
+        headers["Accept-Ranges"] = upstream.acceptRanges ?: "bytes"
+        headers["Cache-Control"] = "no-store"
+        corsHeaders(request, isStream = true)?.let { headers["Access-Control-Allow-Origin"] = it }
+        val status: Int
+        if (rangeHeader != null && total != null) {
+          val end = minOf(reqEnd ?: (total - 1), total - 1)
+          status = 206
+          headers["Content-Range"] = "bytes $reqStart-$end/$total"
+          headers["Content-Length"] = (end - reqStart + 1).toString()
+        } else {
+          status = 200
+          if (total != null && reqStart == 0L) headers["Content-Length"] = total.toString()
+        }
+        writeHead(output, status, headers)
+        val body = upstream.body ?: return
+        skipFully(body, reqStart)
+        val limit =
+          if (rangeHeader != null && total != null) {
+            minOf(reqEnd ?: (total - 1), total - 1) - reqStart + 1
+          } else {
+            Long.MAX_VALUE
+          }
+        copyBodyLimited(body, output, limit)
+        return
+      }
+      // 206 Partial Content.
+      val range = parseContentRange(upstream.contentRange)
+      if (range != null && range.start != reqStart) {
+        throw RemoteException(
+          "UPSTREAM_ERROR",
+          502,
+          "The audio source returned an unexpected range. Try again.",
+        )
+      }
+      val total = range?.total ?: source.contentLength
+      val firstRangeEnd =
+        range?.end
+          ?: if (upstream.contentLength >= 0) reqStart + upstream.contentLength - 1 else firstEnd
+      if (total == null) {
+        // Total size unknown: serve this bounded chunk as-is. The browser
+        // knows it holds only part of the file and will range-request the
+        // rest, which lands back here one bounded chunk at a time.
+        val headers = LinkedHashMap<String, String>()
+        headers["Content-Type"] = contentType
+        headers["Accept-Ranges"] = upstream.acceptRanges ?: "bytes"
+        upstream.contentRange?.let { headers["Content-Range"] = it }
+        headers["Cache-Control"] = "no-store"
+        corsHeaders(request, isStream = true)?.let { headers["Access-Control-Allow-Origin"] = it }
+        if (upstream.contentLength >= 0) headers["Content-Length"] = upstream.contentLength.toString()
+        writeHead(output, if (rangeHeader != null) 206 else upstream.status, headers)
+        upstream.body?.let { copyBodyLimited(it, output, firstRangeEnd - reqStart + 1) }
+        return
+      }
+      val end = minOf(reqEnd ?: (total - 1), total - 1)
+      if (reqStart >= total) {
+        val headers = LinkedHashMap<String, String>()
+        headers["Content-Range"] = "bytes */$total"
+        headers["Content-Length"] = "0"
+        writeHead(output, 416, headers)
+        return
+      }
+      val headers = LinkedHashMap<String, String>()
+      headers["Content-Type"] = contentType
+      headers["Accept-Ranges"] = upstream.acceptRanges ?: "bytes"
+      headers["Cache-Control"] = "no-store"
+      corsHeaders(request, isStream = true)?.let { headers["Access-Control-Allow-Origin"] = it }
+      if (rangeHeader != null) {
+        headers["Content-Range"] = "bytes $reqStart-$end/$total"
+        headers["Content-Length"] = (end - reqStart + 1).toString()
+        writeHead(output, 206, headers)
+      } else {
+        headers["Content-Length"] = (end - reqStart + 1).toString()
+        writeHead(output, 200, headers)
+      }
+      var nextStart = reqStart
+      var current: UpstreamResponse? = upstream
+      var currentEnd = firstRangeEnd
+      while (nextStart <= end) {
+        val resp = current ?: break
+        val body = resp.body
+        if (body == null) break
+        val want = minOf(currentEnd, end) - nextStart + 1
+        val copied = copyBodyLimited(body, output, want)
+        try {
+          resp.close()
+        } catch (_: Exception) {
+        }
+        current = null
+        if (copied <= 0L) break
+        nextStart += copied
+        if (copied < want) break // upstream ended early; response just ends
+        if (nextStart > end) break
+        val nextEnd = minOf(end, nextStart + upstreamChunkBytes(grant.source) - 1)
+        val next =
+          try {
+            openUpstream(grant.source, "bytes=$nextStart-$nextEnd", headOnly = false)
+          } catch (e: RemoteException) {
+            log("bridge stream chunk $nextStart- failed: ${e.code}")
+            break
+          }
+        if (next.status == 200) {
+          // Range stopped being honoured mid-file: skip and finish from it.
+          try {
+            next.body?.let {
+              skipFully(it, nextStart)
+              copyBodyLimited(it, output, end - nextStart + 1)
+            }
+          } finally {
+            next.close()
+          }
+          break
+        }
+        if (next.status != 206) {
+          log("bridge stream chunk $nextStart- -> ${next.status}; ending response")
+          next.close()
+          break
+        }
+        current = next
+        currentEnd = parseContentRange(next.contentRange)?.end ?: nextEnd
+      }
+    } finally {
+      try {
+        upstream.close()
+      } catch (_: Exception) {
+      }
+    }
+  }
+
+  /** (start, endInclusive?) from a validated single Range header; no header = (0, null). */
+  private fun parseRangeBounds(rangeHeader: String?): Pair<Long, Long?> {
+    if (rangeHeader.isNullOrBlank()) return 0L to null
+    val match = RANGE_REGEX.matchEntire(rangeHeader.trim()) ?: return 0L to null
+    val start = match.groupValues[1]
+    val end = match.groupValues[2]
+    if (start.isEmpty()) return 0L to null // suffix ranges use the single-request path
+    val s = start.toLongOrNull() ?: return 0L to null
+    val e = if (end.isEmpty()) null else end.toLongOrNull()
+    return s to e
+  }
+
+  private data class ContentRange(val start: Long, val end: Long, val total: Long?)
+
+  private fun parseContentRange(value: String?): ContentRange? {
+    if (value.isNullOrBlank()) return null
+    val match = CONTENT_RANGE_REGEX.matchEntire(value.trim()) ?: return null
+    val start = match.groupValues[1].toLongOrNull() ?: return null
+    val end = match.groupValues[2].toLongOrNull() ?: return null
+    val total = match.groupValues[3].toLongOrNull()
+    return ContentRange(start, end, total)
+  }
+
+  /**
+   * Per-request upstream range cap, mirroring PlayerClient.rangeBytesFor in
+   * the phone player: 1 MB generally, 512 KB for the clients googlevideo
+   * only serves narrow ranges to.
+   */
+  private fun upstreamChunkBytes(source: ResolvedSource): Long {
+    val client = Regex("""[?&]c=([^&]+)""").find(source.upstreamUrl)?.groupValues?.get(1)?.uppercase()
+    return if (client == "ANDROID_VR" || client?.startsWith("TVHTML5_SIMPLY") == true) {
+      NARROW_CHUNK_BYTES
+    } else {
+      CHUNK_BYTES
+    }
+  }
+
+  private fun skipFully(input: InputStream, count: Long) {
+    var remaining = count
+    val scratch = ByteArray(8192)
+    while (remaining > 0) {
+      val skipped = try {
+        input.skip(remaining)
+      } catch (e: IOException) {
+        0L
+      }
+      if (skipped > 0) {
+        remaining -= skipped
+        continue
+      }
+      val read = input.read(scratch, 0, minOf(scratch.size.toLong(), remaining).toInt())
+      if (read < 0) break
+      remaining -= read
+    }
+  }
+
   private fun openUpstream(source: ResolvedSource, rangeHeader: String?, headOnly: Boolean): UpstreamResponse =
     try {
       fetcher.open(source.upstreamUrl, source.headers, rangeHeader, headOnly)
@@ -435,15 +689,24 @@ class RemoteHttpServer(
     }
 
   private fun copyBody(input: InputStream, output: OutputStream) {
+    copyBodyLimited(input, output, Long.MAX_VALUE)
+  }
+
+  /** Copies at most [maxBytes]; returns how many bytes were written. */
+  private fun copyBodyLimited(input: InputStream, output: OutputStream, maxBytes: Long): Long {
     val buffer = ByteArray(STREAM_BUFFER_BYTES)
-    while (true) {
-      val read = input.read(buffer)
+    var copied = 0L
+    while (copied < maxBytes) {
+      val toRead = minOf(buffer.size.toLong(), maxBytes - copied).toInt()
+      val read = input.read(buffer, 0, toRead)
       if (read < 0) break
       if (read > 0) {
         output.write(buffer, 0, read)
         output.flush()
+        copied += read
       }
     }
+    return copied
   }
 
   /** Only single byte-ranges are supported (what media elements send). */
@@ -756,5 +1019,10 @@ class RemoteHttpServer(
     private const val RESOLVE_PER_MINUTE = 30
 
     private val RANGE_REGEX = Regex("""bytes=(\d*)-(\d*)""")
+    private val CONTENT_RANGE_REGEX = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""")
+
+    /** Upstream bounded-range fetch size for streamed GETs (see streamStitched). */
+    private const val CHUNK_BYTES = 1024L * 1024
+    private const val NARROW_CHUNK_BYTES = 512L * 1024
   }
 }
