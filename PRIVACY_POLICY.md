@@ -29,6 +29,10 @@ This source copy includes no upstream Google Services configuration and has no S
 - Disable or disconnect optional integrations in Settings.
 - Clear local app data or uninstall the app to remove locally stored Soundwave data.
 
+## Remote Web Player (optional, off by default)
+
+When you enable Settings → Remote Web Player, Soundwave runs a small local server so a browser you pair can search and play music on that browser. Pairing uses a short-lived 6-digit code and issues a revocable session token stored only in the browser tab and in app memory. Search queries and track identifiers are processed with the same providers used for in-app playback; audio is relayed through the phone to your paired browser. If you enable the free tunnel, an outbound SSH connection to localhost.run or serveo exposes the same authenticated bridge at a temporary public HTTPS address — no account is created and the address alone grants no access. Disabling the feature or revoking a session closes that access. See REMOTE_WEB_PLAYER.md for details.
+
 ## Open-source notices
 
 Soundwave is based on GPL-3.0-licensed source. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md) for retained source and third-party notices.

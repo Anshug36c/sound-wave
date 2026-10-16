@@ -13,6 +13,10 @@ Soundwave is an Android music player based on the checked-out Echo-Music source.
 
 Optional YouTube, Spotify, Discord, Last.fm, and other non-AI integrations remain part of the source. Their availability depends on provider configuration and terms. Soundwave does not ship upstream Echo Discord/Last.fm credentials or the upstream Google Services/Firebase configuration. Discord and Last.fm sign-in remain unavailable until a build owner supplies Soundwave credentials in `local.properties` or the environment; Firebase-enabled builds must supply project-owned configuration. Core playback does not require these services.
 
+## Remote Web Player (new)
+
+SoundWave can provide music to the Soundwave Web site so songs play **in the browser** (e.g. iPhone Safari) while SoundWave's own player stays untouched — different song, independent queue. Enable it under Settings → Remote Web Player: on the same Wi-Fi the phone serves a small player page itself; on different networks it dials a free, no-account SSH tunnel (localhost.run/serveo) and shows a public HTTPS address. Pairing uses a single-use 6-digit code; sessions are revocable; upstream audio URLs never leave the phone. Full guide, security model, free-tier facts and troubleshooting: [REMOTE_WEB_PLAYER.md](REMOTE_WEB_PLAYER.md).
+
 ## Build
 
 Use JDK 21 and the Android SDK/NDK versions declared in the Gradle files. From the project root:
