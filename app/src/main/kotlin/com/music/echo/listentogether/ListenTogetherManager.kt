@@ -7,6 +7,7 @@ import com.music.innertube.YouTube
 import com.music.innertube.models.WatchEndpoint
 import dagger.hilt.android.qualifiers.ApplicationContext
 import echo.music.iad1tya.constants.ListenTogetherSmartResyncKey
+import echo.music.iad1tya.constants.ListenTogetherStreamAudioKey
 import echo.music.iad1tya.constants.ListenTogetherSyncVolumeKey
 import echo.music.iad1tya.extensions.currentMetadata
 import echo.music.iad1tya.extensions.metadata
@@ -18,6 +19,7 @@ import echo.music.iad1tya.models.toMediaMetadata
 import echo.music.iad1tya.playback.PlayerConnection
 import echo.music.iad1tya.playback.queues.YouTubeQueue
 import echo.music.iad1tya.utils.dataStore
+import echo.music.iad1tya.utils.get
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -669,6 +671,7 @@ constructor(
   }
 
   private fun cleanup() {
+    AudioBridgePublisher.stop()
     if (lastRole == RoomRole.GUEST) {
       restoreGuestMuteState()
     }
@@ -1482,6 +1485,23 @@ constructor(
         trackInfo = trackInfo,
         queue = currentQueue
       )
+    }
+
+    maybePublishAudio(metadata, durationMs)
+  }
+
+  /**
+   * Audio bridge: when hosting with "stream audio" enabled, publish the current track's bytes so
+   * guests that don't own the file (e.g. Soundwave Web) can hear it. Local sources only.
+   */
+  private fun maybePublishAudio(metadata: MediaMetadata, durationMs: Long) {
+    try {
+      if (!client.isHost) return
+      if (!context.dataStore.get(ListenTogetherStreamAudioKey, false)) return
+      val uri = playerConnection?.player?.currentMediaItem?.localConfiguration?.uri
+      AudioBridgePublisher.publishIfLocal(context, client, metadata.id, uri, durationMs)
+    } catch (e: Exception) {
+      Timber.tag(TAG).e(e, "Audio bridge hook failed")
     }
   }
 

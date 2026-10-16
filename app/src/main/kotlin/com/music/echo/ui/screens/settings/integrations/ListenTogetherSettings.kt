@@ -65,6 +65,7 @@ import echo.music.iad1tya.R
 import echo.music.iad1tya.constants.ListenTogetherAutoApprovalKey
 import echo.music.iad1tya.constants.ListenTogetherServerUrlKey
 import echo.music.iad1tya.constants.ListenTogetherSmartResyncKey
+import echo.music.iad1tya.constants.ListenTogetherStreamAudioKey
 import echo.music.iad1tya.constants.ListenTogetherSyncVolumeKey
 import echo.music.iad1tya.constants.ListenTogetherUsernameKey
 import echo.music.iad1tya.listentogether.ListenTogetherEvent
@@ -106,6 +107,7 @@ fun ListenTogetherSettings(
     rememberPreference(ListenTogetherServerUrlKey, ListenTogetherServers.defaultServerUrl)
   var username by rememberPreference(ListenTogetherUsernameKey, "")
   var autoApproval by rememberPreference(ListenTogetherAutoApprovalKey, false)
+  var streamAudio by rememberPreference(ListenTogetherStreamAudioKey, false)
   var syncHostVolume by rememberPreference(ListenTogetherSyncVolumeKey, true)
   var smartResync by rememberPreference(ListenTogetherSmartResyncKey, true)
 
@@ -374,6 +376,29 @@ fun ListenTogetherSettings(
                       .show()
                   }
                 }
+            ),
+            Material3SettingsItem(
+              icon = painterResource(R.drawable.share),
+              title = { Text(stringResource(R.string.listen_together_stream_audio)) },
+              description = { Text(stringResource(R.string.listen_together_stream_audio_desc)) },
+              trailingContent = {
+                Switch(
+                  checked = streamAudio,
+                  onCheckedChange = { streamAudio = it },
+                  enabled = role != RoomRole.GUEST,
+                  thumbContent = {
+                    Icon(
+                      painter =
+                        painterResource(
+                          id = if (streamAudio) R.drawable.check else R.drawable.close
+                        ),
+                      contentDescription = null,
+                      modifier = Modifier.size(SwitchDefaults.IconSize),
+                    )
+                  }
+                )
+              },
+              onClick = { if (role != RoomRole.GUEST) streamAudio = !streamAudio }
             ),
             Material3SettingsItem(
               icon = painterResource(R.drawable.done),

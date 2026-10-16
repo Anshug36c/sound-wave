@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import echo.music.iad1tya.listentogether.proto.Listentogether
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -1320,6 +1321,45 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
 
   private fun sendMessageNoPayload(type: String) {
     sendMessage<Unit>(type, null)
+  }
+
+  /** Sends a protobuf Envelope frame for the audio-bridge extension messages. */
+  private fun sendRaw(type: String, payload: ByteArray) {
+    try {
+      val envelope =
+        Listentogether.Envelope.newBuilder()
+          .setType(type)
+          .setPayload(com.google.protobuf.ByteString.copyFrom(payload))
+          .build()
+      val success = webSocket?.send(okio.ByteString.of(*envelope.toByteArray())) ?: false
+      if (!success) {
+        log(LogLevel.ERROR, "Failed to send raw message", type)
+      }
+    } catch (e: Exception) {
+      log(LogLevel.ERROR, "Error encoding raw message", "$type: ${e.message}")
+    }
+  }
+
+  /** Audio bridge: announce the track whose bytes follow (host -> guests). */
+  fun sendAudioManifest(trackId: String, mime: String, size: Long, durationMs: Long) {
+    val msg =
+      Listentogether.AudioManifestPayload.newBuilder()
+        .setTrackId(trackId)
+        .setMime(mime)
+        .setSize(size)
+        .setDurationMs(durationMs)
+        .build()
+    sendRaw("audio_manifest", msg.toByteArray())
+  }
+
+  /** Audio bridge: one ordered slice of the track's bytes. */
+  fun sendAudioChunk(seq: Int, data: ByteArray) {
+    val msg =
+      Listentogether.AudioChunkPayload.newBuilder()
+        .setSeq(seq.toLong())
+        .setData(com.google.protobuf.ByteString.copyFrom(data))
+        .build()
+    sendRaw("audio_chunk", msg.toByteArray())
   }
 
   fun createRoom(username: String) {

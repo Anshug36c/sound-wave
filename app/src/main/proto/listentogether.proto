@@ -203,3 +203,18 @@ message Envelope {
   bytes payload = 2;
   bool compressed = 3;
 }
+
+/* Audio bridge extension (Soundwave Web): lets a host publish the current track's bytes so a
+   guest that does not own the file (e.g. the browser) can still hear it. Carried over the same
+   WebSocket as Envelope frames with type "audio_manifest" / "audio_chunk". */
+message AudioManifestPayload {
+  string track_id = 1;
+  string mime = 2;
+  int64 size = 3;
+  int64 duration_ms = 4;
+}
+
+message AudioChunkPayload {
+  int64 seq = 1;
+  bytes data = 2;
+}
