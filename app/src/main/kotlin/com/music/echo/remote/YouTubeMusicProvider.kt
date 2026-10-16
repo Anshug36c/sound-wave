@@ -213,9 +213,9 @@ class YouTubeMusicProvider : MusicProvider {
       sections +=
         RemoteSection("New releases", null, page.newReleaseAlbums.mapNotNull { it.toRemoteItem() })
     }
-    page.moodAndGenres.forEach { group ->
+    if (page.moodAndGenres.isNotEmpty()) {
       val items =
-        group.items.map { item ->
+        page.moodAndGenres.map { item ->
           RemoteItem(
             type = "mood",
             id = item.endpoint.browseId + "|" + (item.endpoint.params ?: ""),
@@ -223,7 +223,7 @@ class YouTubeMusicProvider : MusicProvider {
             extra = "#" + (item.stripeColor and 0xFFFFFF).toString(16).padStart(6, '0'),
           )
         }
-      if (items.isNotEmpty()) sections += RemoteSection(group.title, null, items)
+      sections += RemoteSection("Moods & genres", null, items)
     }
     return sections
   }
