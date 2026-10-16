@@ -394,7 +394,7 @@ fun RemoteWebPlayerSettings(
       Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.padding(16.dp)) {
           Text(
-            "Some phones (Xiaomi/Redmi, Oppo, Vivo, OnePlus) kill background apps aggressively, which stops the bridge and drops the tunnel. Allow SoundWave to run without battery restrictions, and keep it out of "deep sleep" lists:",
+            "Some phones (Xiaomi/Redmi, Oppo, Vivo, OnePlus) kill background apps aggressively, which stops the bridge and drops the tunnel. Allow SoundWave to run without battery restrictions, and keep it out of \"deep sleep\" lists:",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -424,7 +424,7 @@ fun RemoteWebPlayerSettings(
           ) { Text("Allow background activity for SoundWave") }
           Spacer(Modifier.height(8.dp))
           Text(
-            "Paired browsers stay paired across bridge/app restarts — if you still see "session expired", pair once more after updating the app.",
+            "Paired browsers stay paired across bridge/app restarts — if you still see \"session expired\", pair once more after updating the app.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
