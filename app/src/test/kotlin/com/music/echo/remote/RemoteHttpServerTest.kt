@@ -52,6 +52,8 @@ class RemoteHttpServerTest {
       return tracks.take(limit)
     }
 
+    override fun recommendations(limit: Int): List<RemoteTrack> = tracks.take(limit)
+
     override fun track(trackId: String): RemoteTrack? = tracks.find { it.id == trackId }
 
     override fun resolve(trackId: String): ResolvedSource {
@@ -173,6 +175,15 @@ class RemoteHttpServerTest {
     assertEquals(401, bad.status)
     assertTrue(bad.text().contains("PAIRING_INVALID"))
     pair()
+  }
+
+  @Test
+  fun recommendationsRequireAuthAndReturnTracks() {
+    assertEquals(401, RawHttp.request(port, "GET", "/api/recommendations").status)
+    val token = pair()
+    val recs = RawHttp.request(port, "GET", "/api/recommendations", headers = auth(token))
+    assertEquals(recs.text(), 200, recs.status)
+    assertTrue(recs.text().contains("Never Gonna Give You Up"))
   }
 
   @Test

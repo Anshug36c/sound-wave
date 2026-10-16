@@ -29,6 +29,7 @@ import kotlin.math.min
  * - `GET  /api/session`        session info (Bearer)
  * - `DELETE /api/session`      revoke own session (Bearer)
  * - `GET  /api/search?q=`      search (Bearer)
+ * - `GET  /api/recommendations` home-feed song recommendations (Bearer)
  * - `GET  /api/track/{id}`     track metadata (Bearer)
  * - `POST /api/resolve`        `{trackId}` -> expiring stream path (Bearer)
  * - `GET|HEAD /api/stream/{grantId}`  audio bytes, Range-capable (Bearer or
@@ -211,6 +212,18 @@ class RemoteHttpServer(
       path == "/api/session" && request.method == "DELETE" -> {
         sessionManager.revoke(session.token)
         writeJson(output, 200, MiniJson.obj("ok" to true), request)
+      }
+      path == "/api/recommendations" -> {
+        requireMethod(request, "GET")
+        rateLimit(session.token, "search", SEARCH_PER_MINUTE)
+        val limit = (request.queryParam("limit")?.toIntOrNull() ?: 20).coerceIn(1, 30)
+        val tracks = provider.recommendations(limit)
+        writeJson(
+          output,
+          200,
+          MiniJson.obj("results" to tracks.map { it.toJson() }),
+          request,
+        )
       }
       path == "/api/search" -> {
         requireMethod(request, "GET")

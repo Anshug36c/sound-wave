@@ -17,6 +17,12 @@ interface MusicProvider {
   /** Search tracks. Throws [RemoteException] on failure. */
   fun search(query: String, limit: Int): List<RemoteTrack>
 
+  /**
+   * Home-feed recommendations (the same source the app's Home screen shows),
+   * songs only. Throws [RemoteException] on failure.
+   */
+  fun recommendations(limit: Int): List<RemoteTrack>
+
   /** Metadata for a known track id, or null when unknown. */
   fun track(trackId: String): RemoteTrack?
 

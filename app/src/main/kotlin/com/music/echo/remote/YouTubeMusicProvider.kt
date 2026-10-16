@@ -53,6 +53,37 @@ class YouTubeMusicProvider : MusicProvider {
     return tracks
   }
 
+  override fun recommendations(limit: Int): List<RemoteTrack> {
+    val page =
+      runBlocking(Dispatchers.IO) {
+        withTimeoutOrNull(SEARCH_TIMEOUT_MS) { YouTube.home().getOrNull() }
+      }
+        ?: throw RemoteException(
+          "RECOMMENDATIONS_FAILED",
+          502,
+          "Recommendations failed. Check the phone's connection and try again.",
+        )
+    val tracks =
+      page.sections
+        .flatMap { it.items }
+        .filterIsInstance<SongItem>()
+        .distinctBy { it.id }
+        .take(limit)
+        .map { item ->
+          RemoteTrack(
+            id = item.id,
+            title = item.title,
+            artist = item.artists.joinToString(", ") { it.name },
+            album = item.album?.name,
+            durationSec = item.duration,
+            thumbnailUrl = item.thumbnail.takeIf { it.isNotBlank() },
+            explicit = item.explicit,
+          )
+        }
+    tracks.forEach { trackCache[it.id] = it }
+    return tracks
+  }
+
   override fun track(trackId: String): RemoteTrack? {
     trackCache[trackId]?.let { return it }
     val details =
