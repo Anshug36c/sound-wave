@@ -134,7 +134,8 @@ Nothing here requires a VPS, TURN server, or payment method.
 | Tunnel stuck on "Contacting…" | Outbound SSH (port 22) may be blocked on this network; SoundWave retries and falls back to the other provider automatically. Try another network. |
 | Song starts then dies / 403 | The signed source expired; the bridge re-resolves once automatically. Press play again if it persists. |
 | Silent on iPhone, plays elsewhere | Opus/WebM-only source on older iOS (the player warns about this). Pick another track, or update iOS (18.4+ plays WebM/Opus). |
-| "Session expired" | Pair again with a fresh code (codes are single-use, sessions last 12 h). |
+| "Session expired" / keeps disconnecting | Your phone is probably killing SoundWave in the background (common on Xiaomi/Oppo/Vivo): use Settings → Remote Web Player → "Allow background activity for SoundWave", and re-pair once after updating. Paired sessions now survive app/process restarts. |
+| Song won't start but search works | The bridge re-resolves and retries automatically; if a specific track always fails while others play, it is that track's source — try another track and report it. |
 
 ## Known limitations
 
