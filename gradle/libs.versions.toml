@@ -127,6 +127,9 @@ desugaring = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = 
 
 junit = { module = "junit:junit", version.ref = "junit" }
 
+jsch = { module = "com.github.mwiede:jsch", version.ref = "jsch" }
+zxing = { module = "com.google.zxing:core", version.ref = "zxing" }
+
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 
 newpipeextractor  = { module = "com.github.TeamNewPipe:NewPipeExtractor", version.ref = "newpipeextractor" }
