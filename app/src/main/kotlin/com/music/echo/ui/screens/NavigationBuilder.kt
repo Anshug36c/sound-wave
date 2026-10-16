@@ -482,6 +482,10 @@ fun NavGraphBuilder.navigationBuilder(
     ListenTogetherSettings(navController, scrollBehavior)
   }
 
+  composable(route = "settings/remote") {
+    echo.music.iad1tya.ui.screens.settings.RemoteWebPlayerSettings(navController, scrollBehavior)
+  }
+
   composable(
     route = "settings/about?highlightKey={highlightKey}",
     arguments =

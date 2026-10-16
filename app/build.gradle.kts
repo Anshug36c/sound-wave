@@ -364,6 +364,12 @@ dependencies {
 
   coreLibraryDesugaring(libs.desugaring)
   implementation(libs.timber)
+
+  // Remote Web Player: pure-Java SSH client for the free no-account tunnel,
+  // and QR generation for pairing addresses.
+  implementation(libs.jsch)
+  implementation(libs.zxing)
+  testImplementation(libs.junit)
   implementation(libs.smoothCorner)
   implementation(libs.lottie.compose)
   implementation("androidx.compose.material:material-icons-extended:1.7.8")

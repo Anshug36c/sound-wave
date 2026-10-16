@@ -128,6 +128,17 @@ class App : Application(), SingletonImageLoader.Factory {
       echo.music.iad1tya.utils.InnerTubeXResolver.init(this@App)
     observeSettingsChanges()
     }
+
+    // Resume the Remote Web Player bridge if the user left it enabled. If
+    // Android refuses a foreground-service start from here, the bridge
+    // simply waits until the user next opens the app or its settings.
+    try {
+      if (echo.music.iad1tya.remote.RemoteBridge.isEnabled(this@App)) {
+        echo.music.iad1tya.remote.RemoteBridgeService.start(this@App)
+      }
+    } catch (e: Exception) {
+      timber.log.Timber.w(e, "Remote Web Player auto-start deferred")
+    }
   }
 
   private suspend fun initializeSettings() {
