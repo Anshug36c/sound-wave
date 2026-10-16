@@ -95,6 +95,7 @@ class RemoteHttpServerTest {
     @Volatile var failNextWith403 = false
     @Volatile var lastRangeHeader: String? = null
     @Volatile var sawRangeLessRequest = false
+    val rangeHeaders = mutableListOf<String?>()
 
     override fun open(
       url: String,
@@ -103,6 +104,7 @@ class RemoteHttpServerTest {
       headOnly: Boolean,
     ): UpstreamResponse {
       lastRangeHeader = rangeHeader
+      synchronized(rangeHeaders) { rangeHeaders.add(rangeHeader) }
       if (rangeHeader == null) sawRangeLessRequest = true
       if (failNextWith403) {
         failNextWith403 = false
@@ -307,7 +309,7 @@ class RemoteHttpServerTest {
   }
 
   @Test
-  fun rangeLessStreamRequestFetchesUpstreamFromZero() {
+  fun rangeLessStreamRequestFetchesUpstreamInBoundedRanges() {
     val token = pair()
     val resolve =
       RawHttp.request(
@@ -320,14 +322,26 @@ class RemoteHttpServerTest {
     val streamPath = MiniJson.parseObject(resolve.text()).objString("streamPath")!!
 
     // Media elements do not always send Range on the first request, and
-    // googlevideo 403s range-less GETs for most YouTube Music tracks, so the
-    // bridge must ask upstream with bytes=0- and still answer a plain 200.
+    // googlevideo paces an open-ended response down to roughly playback
+    // speed, so a browser behind such a fetch can never build a buffer and
+    // appears stuck before the first second. The bridge must therefore ask
+    // upstream only in bounded ranges (stitched into one response) and
+    // still answer a plain 200 with the full body.
     val full = RawHttp.request(port, "GET", streamPath, headers = auth(token))
     assertEquals(200, full.status)
     assertTrue(full.body.contentEquals(provider.audio))
     assertEquals(provider.audio.size.toString(), full.header("content-length"))
-    assertEquals("bytes=0-", fetcher.lastRangeHeader)
     assertTrue("bridge must never forward a range-less request upstream", !fetcher.sawRangeLessRequest)
+    val fetchedRanges = synchronized(fetcher.rangeHeaders) { fetcher.rangeHeaders.filterNotNull() }
+    assertTrue("bridge must fetch upstream with bounded ranges", fetchedRanges.isNotEmpty())
+    assertTrue(
+      "every upstream range must be bounded to at most 1MB: $fetchedRanges",
+      fetchedRanges.all { range ->
+        val match = Regex("""bytes=(\d+)-(\d+)""").matchEntire(range)
+        match != null && match.groupValues[2].toLong() - match.groupValues[1].toLong() + 1 <= 1024L * 1024
+      },
+    )
+    assertEquals("bytes=0-1048575", fetcher.lastRangeHeader)
 
     val head = RawHttp.request(port, "HEAD", streamPath, headers = auth(token))
     assertEquals(200, head.status)
