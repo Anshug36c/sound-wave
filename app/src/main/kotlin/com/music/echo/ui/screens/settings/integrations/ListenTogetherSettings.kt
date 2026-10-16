@@ -65,6 +65,7 @@ import echo.music.iad1tya.R
 import echo.music.iad1tya.constants.ListenTogetherAutoApprovalKey
 import echo.music.iad1tya.constants.ListenTogetherServerUrlKey
 import echo.music.iad1tya.constants.ListenTogetherSmartResyncKey
+import echo.music.iad1tya.constants.ListenTogetherStreamAudioKey
 import echo.music.iad1tya.constants.ListenTogetherSyncVolumeKey
 import echo.music.iad1tya.constants.ListenTogetherUsernameKey
 import echo.music.iad1tya.listentogether.ListenTogetherEvent
@@ -72,6 +73,7 @@ import echo.music.iad1tya.listentogether.ListenTogetherServer
 import echo.music.iad1tya.listentogether.ListenTogetherServers
 import echo.music.iad1tya.listentogether.LogEntry
 import echo.music.iad1tya.listentogether.LogLevel
+import echo.music.iad1tya.listentogether.PhoneWebServer
 import echo.music.iad1tya.listentogether.RoomRole
 import echo.music.iad1tya.ui.component.DefaultDialog
 import echo.music.iad1tya.ui.component.IconButton
@@ -106,6 +108,8 @@ fun ListenTogetherSettings(
     rememberPreference(ListenTogetherServerUrlKey, ListenTogetherServers.defaultServerUrl)
   var username by rememberPreference(ListenTogetherUsernameKey, "")
   var autoApproval by rememberPreference(ListenTogetherAutoApprovalKey, false)
+  var streamAudio by rememberPreference(ListenTogetherStreamAudioKey, false)
+  val phoneWeb by PhoneWebServer.state.collectAsState()
   var syncHostVolume by rememberPreference(ListenTogetherSyncVolumeKey, true)
   var smartResync by rememberPreference(ListenTogetherSmartResyncKey, true)
 
@@ -375,6 +379,91 @@ fun ListenTogetherSettings(
                   }
                 }
             ),
+            Material3SettingsItem(
+              icon = painterResource(R.drawable.share),
+              title = { Text(stringResource(R.string.listen_together_stream_audio)) },
+              description = { Text(stringResource(R.string.listen_together_stream_audio_desc)) },
+              trailingContent = {
+                Switch(
+                  checked = streamAudio,
+                  onCheckedChange = { streamAudio = it },
+                  enabled = role != RoomRole.GUEST,
+                  thumbContent = {
+                    Icon(
+                      painter =
+                        painterResource(
+                          id = if (streamAudio) R.drawable.check else R.drawable.close
+                        ),
+                      contentDescription = null,
+                      modifier = Modifier.size(SwitchDefaults.IconSize),
+                    )
+                  }
+                )
+              },
+              onClick = { if (role != RoomRole.GUEST) streamAudio = !streamAudio }
+            ),
+            Material3SettingsItem(
+              icon = painterResource(R.drawable.share),
+              title = { Text(stringResource(R.string.listen_together_serve_web)) },
+              description = {
+                Text(stringResource(R.string.listen_together_serve_web_desc))
+              },
+              trailingContent = {
+                Switch(
+                  checked = phoneWeb.running,
+                  onCheckedChange = { on ->
+                    if (on) PhoneWebServer.start(context) else PhoneWebServer.stop()
+                  },
+                  thumbContent = {
+                    Icon(
+                      painter =
+                        painterResource(
+                          id = if (phoneWeb.running) R.drawable.check else R.drawable.close
+                        ),
+                      contentDescription = null,
+                      modifier = Modifier.size(SwitchDefaults.IconSize),
+                    )
+                  }
+                )
+              },
+              onClick = {
+                if (phoneWeb.running) PhoneWebServer.stop() else PhoneWebServer.start(context)
+              }
+            ),
+            if (phoneWeb.error != null)
+              Material3SettingsItem(
+                icon = painterResource(R.drawable.close),
+                title = { Text(stringResource(R.string.listen_together_serve_web_error)) },
+                description = { Text(phoneWeb.error ?: "") },
+                onClick = null
+              )
+            else null,
+            if (phoneWeb.running)
+              Material3SettingsItem(
+                icon = painterResource(R.drawable.check),
+                title = { Text(phoneWeb.address) },
+                description = {
+                  Text(stringResource(R.string.listen_together_serve_web_code, phoneWeb.code))
+                },
+                onClick = {
+                  val clip =
+                    android.content.ClipData.newPlainText(
+                      "soundwave-web",
+                      phoneWeb.address + "  code " + phoneWeb.code
+                    )
+                  (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                          as android.content.ClipboardManager)
+                    .setPrimaryClip(clip)
+                  Toast
+                    .makeText(
+                      context,
+                      R.string.listen_together_serve_web_copied,
+                      Toast.LENGTH_SHORT
+                    )
+                    .show()
+                }
+              )
+            else null,
             Material3SettingsItem(
               icon = painterResource(R.drawable.done),
               title = { Text(stringResource(R.string.listen_together_auto_approval)) },
