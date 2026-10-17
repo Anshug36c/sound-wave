@@ -72,6 +72,7 @@ constructor(
 
   private var playerConnection: PlayerConnection? = null
   private var eventCollectorJob: Job? = null
+  private var stateCollectorJobs: List<Job> = emptyList()
   private var queueObserverJob: Job? = null
   private var volumeObserverJob: Job? = null
   private var playerListenerRegistered = false
@@ -415,33 +416,42 @@ constructor(
         }
       }
 
-    scope.launch {
-      roomState.collect { state ->
-        val lastUpdate = state?.lastUpdate ?: return@collect
-        if (lastUpdate > 0) {
-          syncClock.onServerTimestamp(lastUpdate, System.currentTimeMillis(), client.rtt.value)
-        }
-      }
-    }
-
-    scope.launch {
-      role.collect { newRole ->
-        try {
-          val previousRole = lastRole
-          lastRole = newRole
-          refreshSyncCapabilities()
-        } catch (e: Exception) {
-          Timber.tag(TAG).e(e, "Error in role change handler")
-        }
-      }
-    }
-
-    scope.launch {
-      roomState
-        .map { it?.allowParticipantControl ?: false }
-        .distinctUntilChanged()
-        .collect { refreshSyncCapabilities() }
-    }
+    // initialize() is called from both MainActivity and the ViewModel, so
+    // these collectors must be re-created, not accumulated: cancel the
+    // previous set first (duplicate collectors multiplied every sync action).
+    stateCollectorJobs.forEach { it.cancel() }
+    stateCollectorJobs =
+      listOf(
+        scope.launch {
+          roomState.collect { state ->
+            val lastUpdate = state?.lastUpdate ?: return@collect
+            if (lastUpdate > 0) {
+              syncClock.onServerTimestamp(
+                lastUpdate,
+                System.currentTimeMillis(),
+                client.rtt.value
+              )
+            }
+          }
+        },
+        scope.launch {
+          role.collect { newRole ->
+            try {
+              val previousRole = lastRole
+              lastRole = newRole
+              refreshSyncCapabilities()
+            } catch (e: Exception) {
+              Timber.tag(TAG).e(e, "Error in role change handler")
+            }
+          }
+        },
+        scope.launch {
+          roomState
+            .map { it?.allowParticipantControl ?: false }
+            .distinctUntilChanged()
+            .collect { refreshSyncCapabilities() }
+        },
+      )
   }
 
   private fun handleEvent(event: ListenTogetherEvent) {
