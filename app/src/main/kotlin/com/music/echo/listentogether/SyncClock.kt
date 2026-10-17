@@ -37,9 +37,14 @@ class SyncClock(
   fun onServerTimestamp(serverTimestampMs: Long, localReceiptMs: Long, rttMs: Long?) {
     if (serverTimestampMs <= 0L) return
     if (rttMs != null && rttMs > maxAcceptableRttMs) return
-    val oneWayMs = (rttMs ?: 0L).coerceAtLeast(0L) / 2
+    // A non-positive RTT means "not measured yet" (the client reports 0
+    // before the first pong). Such samples carry no transit information:
+    // they may seed an estimate, but must never outrank a measured sample
+    // or displace one.
+    val measured = rttMs != null && rttMs > 0L
+    val oneWayMs = if (measured) rttMs / 2 else 0L
     val offset = serverTimestampMs + oneWayMs - localReceiptMs
-    val sampleRtt = rttMs ?: Long.MAX_VALUE
+    val sampleRtt = if (measured) rttMs else Long.MAX_VALUE
     val stale = localReceiptMs - bestSampleAtLocalMs > maxSampleAgeMs
     if (bestOffsetMs == null || stale || sampleRtt <= bestRttMs) {
       bestOffsetMs = offset

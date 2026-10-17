@@ -1089,10 +1089,12 @@ constructor(
         }
         PlaybackActions.SKIP_NEXT -> {
           Timber.tag(TAG).d("Guest: SKIP_NEXT")
+          setGuestPlaybackSpeed(1f)
           connection.seekToNext()
         }
         PlaybackActions.SKIP_PREV -> {
           Timber.tag(TAG).d("Guest: SKIP_PREV")
+          setGuestPlaybackSpeed(1f)
           connection.seekToPrevious()
         }
         PlaybackActions.QUEUE_ADD -> {

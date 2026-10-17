@@ -87,6 +87,22 @@ class SyncClockTest {
   }
 
   @Test
+  fun unmeasuredRttDoesNotPinTheEstimate() {
+    val clock = SyncClock(maxSampleAgeMs = 10_000L)
+    // Before the first pong the client reports RTT 0 ("unmeasured"). That
+    // sample seeds an estimate (offset 1000, no transit compensation)...
+    clock.onServerTimestamp(serverTimestampMs = 101_000L, localReceiptMs = 100_000L, rttMs = 0L)
+    assertEquals(1000L, clock.serverNowMs(100_000L) - 100_000L)
+    // ...but the first measured sample must immediately refine it
+    // (offset = 103_000 + 100 - 102_000 = 1100).
+    clock.onServerTimestamp(serverTimestampMs = 103_000L, localReceiptMs = 102_000L, rttMs = 200L)
+    assertEquals(1100L, clock.serverNowMs(102_000L) - 102_000L)
+    // And a later unmeasured sample must not displace the measured one.
+    clock.onServerTimestamp(serverTimestampMs = 120_000L, localReceiptMs = 103_000L, rttMs = null)
+    assertEquals(1100L, clock.serverNowMs(103_000L) - 103_000L)
+  }
+
+  @Test
   fun resetClearsEstimate() {
     val clock = SyncClock()
     clock.onServerTimestamp(serverTimestampMs = 100_000L, localReceiptMs = 99_000L, rttMs = 100L)
