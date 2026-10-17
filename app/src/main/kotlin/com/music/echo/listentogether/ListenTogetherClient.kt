@@ -151,6 +151,7 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
     private const val INITIAL_RECONNECT_DELAY_MS = 1000L
     private const val MAX_RECONNECT_DELAY_MS = 120000L
     private const val PING_INTERVAL_MS = 25000L
+    private const val INITIAL_ACTION_TIMEOUT_MS = 6000L
     private const val MAX_LOG_ENTRIES = 500
     private const val SESSION_GRACE_PERIOD_MS = 10 * 60 * 1000L
 
@@ -369,6 +370,17 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
 
   @Volatile private var pendingAction: PendingAction? = null
 
+  // ---- server failover + wire-format negotiation ----
+  // Rooms live on one server, so rotation only happens before a session
+  // exists; once connected, the winning server is persisted for next time.
+  private var currentServerUrl: String? = null
+  private val attemptedServerUrls = mutableSetOf<String>()
+
+  @Volatile private var socketOpened = false
+  private var formatFlipped = false
+  private var lastInitialAction: PendingAction? = null
+  private var initialActionWatchdog: Job? = null
+
   private var wakeLock: PowerManager.WakeLock? = null
 
   private val joinRequestNotifications = ConcurrentHashMap<String, Int>()
@@ -439,11 +451,21 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
     }
 
     _connectionState.value = ConnectionState.CONNECTING
-    val serverUrl = getServerUrl()
+    val serverUrl = resolveServerUrl()
     log(LogLevel.INFO, "Connecting to server", serverUrl)
 
-    codec.format = MessageFormat.JSON
-    codec.compressionEnabled = false
+    // Start in the format this relay actually speaks (see
+    // ListenTogetherServers); the old always-JSON start is rejected by
+    // the Go relays, which made the feature look dead.
+    codec.format =
+      if (ListenTogetherServers.formatFor(serverUrl) == ListenTogetherServer.FORMAT_JSON) {
+        MessageFormat.JSON
+      } else {
+        MessageFormat.PROTOBUF
+      }
+    codec.compressionEnabled = codec.format == MessageFormat.PROTOBUF
+    socketOpened = false
+    formatFlipped = false
 
     val request = Request.Builder().url(serverUrl).build()
 
@@ -456,6 +478,9 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
             this@ListenTogetherClient.webSocket = webSocket
             _connectionState.value = ConnectionState.CONNECTED
             reconnectAttempts = 0
+            socketOpened = true
+            attemptedServerUrls.clear()
+            persistWorkingServer(serverUrl)
             startPingJob()
 
             if (sessionToken != null && storedRoomCode != null) {
@@ -493,6 +518,7 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
 
           override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             log(LogLevel.ERROR, "Connection failure", t.message)
+            if (tryFailoverToNextServer()) return
             handleConnectionFailure(t)
           }
         }
@@ -502,7 +528,12 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
   private fun executePendingAction() {
     val action = pendingAction ?: return
     pendingAction = null
+    lastInitialAction = action
+    sendInitialAction(action)
+    scheduleInitialActionWatchdog()
+  }
 
+  private fun sendInitialAction(action: PendingAction) {
     when (action) {
       is PendingAction.CreateRoom -> {
         log(LogLevel.INFO, "Executing pending create room", action.username)
@@ -522,8 +553,108 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
     }
   }
 
+  /**
+   * A server that accepts the socket but never answers the initial action
+   * is usually speaking the other wire format (or is wedged). Flip format
+   * once and resend; if it still stays silent, fail over to the next
+   * server. This is what makes every entry in the server list usable.
+   */
+  private fun scheduleInitialActionWatchdog() {
+    initialActionWatchdog?.cancel()
+    initialActionWatchdog =
+      scope.launch {
+        delay(INITIAL_ACTION_TIMEOUT_MS)
+        val action = lastInitialAction ?: return@launch
+        if (_roomState.value != null) return@launch
+        if (!formatFlipped) {
+          formatFlipped = true
+          flipCodecFormat()
+          log(LogLevel.WARNING, "No answer; retrying in ${codec.format.name}", "")
+          sendInitialAction(action)
+          scheduleInitialActionWatchdog()
+        } else {
+          lastInitialAction = null
+          try {
+            webSocket?.close(1000, "Server not answering; failing over")
+          } catch (_: Exception) {
+          }
+          if (!tryFailoverToNextServer()) {
+            handleConnectionFailure(Exception("Server did not answer"))
+          }
+        }
+      }
+  }
+
+  private fun flipCodecFormat() {
+    codec.format =
+      if (codec.format == MessageFormat.JSON) MessageFormat.PROTOBUF else MessageFormat.JSON
+    codec.compressionEnabled = codec.format == MessageFormat.PROTOBUF
+  }
+
+  private fun clearInitialAction() {
+    lastInitialAction = null
+    initialActionWatchdog?.cancel()
+    initialActionWatchdog = null
+  }
+
+  private fun resolveServerUrl(): String {
+    currentServerUrl?.let {
+      return it
+    }
+    val saved =
+      try {
+        getServerUrl()
+      } catch (e: Exception) {
+        null
+      }
+    val url = if (!saved.isNullOrBlank()) saved else ListenTogetherServers.defaultServerUrl
+    currentServerUrl = url
+    return url
+  }
+
+  private fun persistWorkingServer(url: String) {
+    scope.launch {
+      try {
+        context.dataStore.edit { preferences -> preferences[ListenTogetherServerUrlKey] = url }
+      } catch (e: Exception) {
+        log(LogLevel.DEBUG, "Failed to persist working server", e.message)
+      }
+    }
+  }
+
+  /**
+   * Rotates to the next known server when the current one could not even
+   * open a socket. Never rotates with a live session (rooms are per-server).
+   */
+  private fun tryFailoverToNextServer(): Boolean {
+    if (userDisconnected || socketOpened) return false
+    if (sessionToken != null || _roomState.value != null) return false
+    val current = currentServerUrl ?: return false
+    attemptedServerUrls.add(current)
+    val next =
+      ListenTogetherServers.candidates(current).firstOrNull { it.url !in attemptedServerUrls }
+    if (next == null) {
+      // Full pass done: reset so the next backoff cycle rotates afresh,
+      // and let the caller's backoff path pace things from here.
+      attemptedServerUrls.clear()
+      return false
+    }
+    currentServerUrl = next.url
+    log(LogLevel.INFO, "Server unreachable; failing over", "$current -> ${next.url}")
+    _connectionState.value = ConnectionState.DISCONNECTED
+    scope.launch {
+      delay(400)
+      if (!userDisconnected) connect()
+    }
+    return true
+  }
+
   fun disconnect() {
     userDisconnected = true
+    clearInitialAction()
+    pendingAction = null
+    currentServerUrl = null
+    attemptedServerUrls.clear()
     log(LogLevel.INFO, "Disconnecting from server")
     releaseWakeLock()
     pingJob?.cancel()
@@ -793,12 +924,21 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
         codec.format = MessageFormat.PROTOBUF
         codec.compressionEnabled = true
         log(LogLevel.INFO, "Upgraded to Protobuf", "with compression")
+        // The initial create/join may already have been rejected in JSON;
+        // resend it in the format this server actually speaks.
+        val initial = lastInitialAction
+        if (initial != null && !formatFlipped) {
+          formatFlipped = true
+          sendInitialAction(initial)
+          scheduleInitialActionWatchdog()
+        }
       }
 
       val (msgType, payloadBytes) = codec.decode(data)
 
       when (msgType) {
         MessageTypes.ROOM_CREATED -> {
+          clearInitialAction()
           val payload =
             codec.decodePayload(msgType, payloadBytes, detectedFormat) as? RoomCreatedPayload
               ?: return
@@ -880,6 +1020,7 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
           }
         }
         MessageTypes.JOIN_APPROVED -> {
+          clearInitialAction()
           val payload =
             codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinApprovedPayload
               ?: return
@@ -903,6 +1044,7 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
           }
         }
         MessageTypes.JOIN_REJECTED -> {
+          clearInitialAction()
           val payload =
             codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinRejectedPayload
               ?: return
@@ -1132,6 +1274,15 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
             codec.decodePayload(msgType, payloadBytes, detectedFormat) as? ErrorPayload ?: return
           log(LogLevel.ERROR, "Server error", "${payload.code}: ${payload.message}")
 
+          if (payload.code == "invalid_message" && lastInitialAction != null && !formatFlipped) {
+            // Wrong wire format for this relay: flip and resend at once.
+            formatFlipped = true
+            flipCodecFormat()
+            log(LogLevel.WARNING, "Retrying in ${codec.format.name} after invalid_message", "")
+            sendInitialAction(lastInitialAction!!)
+            scheduleInitialActionWatchdog()
+          }
+
           when (payload.code) {
             "session_not_found" -> {
 
@@ -1178,6 +1329,7 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
           }
         }
         MessageTypes.RECONNECTED -> {
+          clearInitialAction()
           val payload =
             codec.decodePayload(msgType, payloadBytes, detectedFormat) as? ReconnectedPayload
               ?: return
@@ -1320,7 +1472,9 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
     storedUsername = username
 
     if (_connectionState.value == ConnectionState.CONNECTED) {
+      lastInitialAction = PendingAction.CreateRoom(username)
       sendMessage(MessageTypes.CREATE_ROOM, CreateRoomPayload(username))
+      scheduleInitialActionWatchdog()
     } else {
       log(LogLevel.INFO, "Not connected, queueing create room action")
       pendingAction = PendingAction.CreateRoom(username)
@@ -1346,7 +1500,9 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
     storedUsername = username
 
     if (_connectionState.value == ConnectionState.CONNECTED) {
+      lastInitialAction = PendingAction.JoinRoom(roomCode, username)
       sendMessage(MessageTypes.JOIN_ROOM, JoinRoomPayload(roomCode.uppercase(), username))
+      scheduleInitialActionWatchdog()
     } else {
       log(LogLevel.INFO, "Not connected, queueing join room action")
       pendingAction = PendingAction.JoinRoom(roomCode, username)
