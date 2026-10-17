@@ -116,6 +116,7 @@ fun ListenTogetherScreen(navController: NavController, showTopBar: Boolean = fal
   val userId by listenTogetherManager.userId.collectAsState()
   val pendingJoinRequests by listenTogetherManager.pendingJoinRequests.collectAsState()
   val pendingSuggestions by listenTogetherManager.pendingSuggestions.collectAsState()
+  val rttMs by listenTogetherManager.rtt.collectAsState()
 
   val (listenTogetherInTopBar) = rememberPreference(ListenTogetherInTopBarKey, defaultValue = true)
   val shouldShowTopBar = showTopBar || listenTogetherInTopBar
@@ -254,6 +255,7 @@ fun ListenTogetherScreen(navController: NavController, showTopBar: Boolean = fal
         item {
           RoomStatusCard(
             roomCode = room.roomCode,
+            rttMs = rttMs,
             isHost = isHost,
             allowParticipantControl = room.allowParticipantControl,
             onAllowParticipantControlChange = { enabled ->
@@ -649,6 +651,7 @@ private fun ConnectionStatusCard(
 @Composable
 private fun RoomStatusCard(
   roomCode: String,
+  rttMs: Long = 0L,
   isHost: Boolean,
   allowParticipantControl: Boolean,
   onAllowParticipantControlChange: (Boolean) -> Unit,
@@ -691,6 +694,15 @@ private fun RoomStatusCard(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
       )
+      if (rttMs > 0) {
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+          text = "Sync latency · $rttMs ms",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = TextAlign.Center
+        )
+      }
 
       if (isHost) {
         Spacer(modifier = Modifier.height(16.dp))
@@ -741,6 +753,28 @@ private fun RoomStatusCard(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(stringResource(R.string.copy_code))
+          }
+
+          FilledTonalButton(
+            onClick = {
+              val sendIntent =
+                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                  type = "text/plain"
+                  putExtra(android.content.Intent.EXTRA_TEXT, inviteLink)
+                }
+              context.startActivity(
+                android.content.Intent.createChooser(sendIntent, null)
+              )
+            },
+            shape = RoundedCornerShape(12.dp)
+          ) {
+            Icon(
+              painter = painterResource(R.drawable.share),
+              contentDescription = stringResource(R.string.share),
+              modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.share))
           }
         }
       }
@@ -1130,7 +1164,7 @@ private fun JoinCreateRoomSection(
       ) {
         OutlinedTextField(
           value = roomCodeInput,
-          onValueChange = { if (it.length <= 8) onRoomCodeChange(it.uppercase()) },
+          onValueChange = { onRoomCodeChange(extractRoomCodeInput(it)) },
           label = { Text(stringResource(R.string.room_code)) },
           placeholder = { Text(stringResource(R.string.enter_room_code)) },
           leadingIcon = {
@@ -1426,4 +1460,18 @@ private fun UserActionDialog(
       }
     }
   }
+}
+
+/**
+ * Accepts a typed room code or a pasted invite link
+ * (e.g. https://…/listen?code=ABCD1234) and returns the 8-character code.
+ */
+private fun extractRoomCodeInput(raw: String): String {
+  val upper = raw.trim().uppercase()
+  Regex("CODE=([A-Z0-9]{8})").find(upper)?.let {
+    return it.groupValues[1]
+  }
+  val filtered = upper.filter { it.isLetterOrDigit() }
+  if (filtered.length <= 8) return filtered
+  return Regex("""\b[A-Z0-9]{8}\b""").find(upper)?.value ?: filtered.take(8)
 }

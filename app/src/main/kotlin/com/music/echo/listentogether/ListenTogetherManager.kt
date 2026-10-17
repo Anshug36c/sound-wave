@@ -47,9 +47,20 @@ constructor(
 
     private const val SYNC_DEBOUNCE_THRESHOLD_MS = 1000L
 
-    private const val POSITION_TOLERANCE_MS = 2000L
+    private const val POSITION_TOLERANCE_MS = 1000L
 
-    private const val PLAYBACK_POSITION_TOLERANCE_MS = 3000L
+    private const val PLAYBACK_POSITION_TOLERANCE_MS = 1250L
+
+    /** Drift below the seek threshold is corrected by nudging playback speed, not by seeking. */
+    private const val SOFT_DRIFT_MIN_MS = 250L
+
+    private const val SOFT_DRIFT_SPEED = 0.05f
+
+    /** How long a guest waits for the room's buffer-complete before simply playing. */
+    private const val BUFFER_FALLBACK_TIMEOUT_MS = 6000L
+
+    /** Bounds how far a buffered pending position may be projected forward. */
+    private const val MAX_PENDING_EXTRAPOLATION_MS = 300_000L
   }
 
   private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -89,6 +100,11 @@ constructor(
   private var pendingSyncState: SyncStatePayload? = null
 
   private var bufferCompleteReceivedForTrack: String? = null
+
+  /** Server-clock estimate used to project host positions onto local time. */
+  private val syncClock = SyncClock()
+
+  private var bufferFallbackJob: Job? = null
 
   val connectionState = client.connectionState
   val roomState = client.roomState
@@ -400,6 +416,15 @@ constructor(
       }
 
     scope.launch {
+      roomState.collect { state ->
+        val lastUpdate = state?.lastUpdate ?: return@collect
+        if (lastUpdate > 0) {
+          syncClock.onServerTimestamp(lastUpdate, System.currentTimeMillis(), client.rtt.value)
+        }
+      }
+    }
+
+    scope.launch {
       role.collect { newRole ->
         try {
           val previousRole = lastRole
@@ -470,10 +495,21 @@ constructor(
 
         saveMuteStateOnJoin()
 
+        syncClock.onServerTimestamp(
+          event.state.lastUpdate,
+          System.currentTimeMillis(),
+          client.rtt.value
+        )
         applyPlaybackState(
           currentTrack = event.state.currentTrack,
           isPlaying = event.state.isPlaying,
-          position = event.state.position,
+          position =
+            syncClock.adjustedPositionMs(
+              event.state.position,
+              event.state.lastUpdate,
+              event.state.isPlaying,
+              System.currentTimeMillis()
+            ),
           queue = event.state.queue
         )
         applyHostVolumeIfNeeded(event.state.volume)
@@ -481,6 +517,9 @@ constructor(
       }
       is ListenTogetherEvent.PlaybackSync -> {
         Timber.tag(TAG).d("PlaybackSync received: ${event.action.action}")
+        event.action.serverTime?.let {
+          syncClock.onServerTimestamp(it, System.currentTimeMillis(), client.rtt.value)
+        }
         if (isSyncing) return
         handlePlaybackSync(event.action)
       }
@@ -518,6 +557,11 @@ constructor(
         }
       }
       is ListenTogetherEvent.SyncStateReceived -> {
+        syncClock.onServerTimestamp(
+          event.state.lastUpdate,
+          System.currentTimeMillis(),
+          client.rtt.value
+        )
         Timber.tag(TAG)
           .d(
             "SyncStateReceived: playing=${event.state.isPlaying}, pos=${event.state.position}, track=${event.state.currentTrack?.id}"
@@ -592,7 +636,13 @@ constructor(
             applyPlaybackState(
               currentTrack = event.state.currentTrack,
               isPlaying = event.state.isPlaying,
-              position = event.state.position,
+              position =
+                syncClock.adjustedPositionMs(
+                  event.state.position,
+                  event.state.lastUpdate,
+                  event.state.isPlaying,
+                  System.currentTimeMillis()
+                ),
               queue = event.state.queue,
               bypassBuffer = true
             )
@@ -669,6 +719,9 @@ constructor(
   }
 
   private fun cleanup() {
+    bufferFallbackJob?.cancel()
+    bufferFallbackJob = null
+    setGuestPlaybackSpeed(1f)
     if (lastRole == RoomRole.GUEST) {
       restoreGuestMuteState()
     }
@@ -736,12 +789,65 @@ constructor(
     connection.service.playerVolume.value = target
   }
 
+  /**
+   * The room's buffer coordination only helps if the completion signal
+   * actually arrives; if it does not (a peer vanished mid-buffer, a relay
+   * that never sends it), the guest would sit paused forever. After a
+   * grace period, play anyway at the (projected) host position.
+   */
+  private fun scheduleBufferFallback(trackId: String) {
+    bufferFallbackJob?.cancel()
+    bufferFallbackJob =
+      scope.launch {
+        delay(BUFFER_FALLBACK_TIMEOUT_MS)
+        if (
+          bufferingTrackId == trackId &&
+            pendingSyncState != null &&
+            bufferCompleteReceivedForTrack != trackId
+        ) {
+          Timber.tag(TAG)
+            .d("No buffer-complete for $trackId within ${BUFFER_FALLBACK_TIMEOUT_MS}ms; playing anyway")
+          bufferCompleteReceivedForTrack = trackId
+          applyPendingSyncIfReady()
+        }
+      }
+  }
+
+  /** Gentle drift correction: ±5% playback speed beats an audible seek jump. */
+  private fun applyGuestDriftCorrection(currentPosMs: Long, targetPosMs: Long) {
+    if (isHost) return
+    val driftMs = targetPosMs - currentPosMs
+    val speed =
+      when {
+        kotlin.math.abs(driftMs) < SOFT_DRIFT_MIN_MS -> 1f
+        driftMs > 0 -> 1f + SOFT_DRIFT_SPEED
+        else -> 1f - SOFT_DRIFT_SPEED
+      }
+    setGuestPlaybackSpeed(speed)
+  }
+
+  private fun setGuestPlaybackSpeed(speed: Float) {
+    if (isHost) return
+    try {
+      val player = playerConnection?.player ?: return
+      if (kotlin.math.abs(player.playbackParameters.speed - speed) > 0.001f) {
+        player.setPlaybackSpeed(speed)
+        Timber.tag(TAG).d("Guest playback speed -> $speed")
+      }
+    } catch (e: Exception) {
+      Timber.tag(TAG).e(e, "Failed to set guest playback speed")
+    }
+  }
+
   private fun applyPendingSyncIfReady() {
     val pending = pendingSyncState ?: return
     val pendingTrackId = pending.currentTrack?.id ?: bufferingTrackId ?: return
     val completeForTrack = bufferCompleteReceivedForTrack
 
     if (completeForTrack != pendingTrackId) return
+
+    bufferFallbackJob?.cancel()
+    bufferFallbackJob = null
 
     val connection = playerConnection ?: return
     val player = connection.player
@@ -752,7 +858,16 @@ constructor(
       )
     isSyncing = true
 
-    val targetPos = pending.position
+    // The host kept playing while this guest buffered: project the stored
+    // position forward by the locally measured wait so we join where the
+    // room actually is, not where it was when buffering started.
+    val targetPos =
+      if (pending.isPlaying) {
+        val elapsedMs = System.currentTimeMillis() - pending.lastUpdate
+        pending.position + elapsedMs.coerceIn(0L, MAX_PENDING_EXTRAPOLATION_MS)
+      } else {
+        pending.position
+      }
     val posDiff = kotlin.math.abs(player.currentPosition - targetPos)
     val willPlay = pending.isPlaying
 
@@ -806,8 +921,12 @@ constructor(
           val basePos = action.position ?: 0L
           val now = System.currentTimeMillis()
           val adjustedPos =
-            action.serverTime?.let { serverTime -> basePos + kotlin.math.max(0L, now - serverTime) }
-              ?: basePos
+            syncClock.adjustedPositionMs(
+              positionMs = basePos,
+              serverTimestampMs = action.serverTime,
+              isPlaying = true,
+              localNowMs = now
+            )
 
           Timber.tag(TAG)
             .d("Guest: PLAY at position $adjustedPos, currently playing=${player.playWhenReady}")
@@ -845,12 +964,12 @@ constructor(
                 .d(
                   "Guest: PLAY seeking during playback ${player.currentPosition} -> $adjustedPos (diff ${posDiff}ms)"
                 )
+              setGuestPlaybackSpeed(1f)
               connection.seekTo(adjustedPos)
             } else {
-              Timber.tag(TAG)
-                .d(
-                  "Guest: PLAY skipping seek - already playing, drift acceptable (${posDiff}ms < ${PLAYBACK_POSITION_TOLERANCE_MS}ms)"
-                )
+              // Small drift: converge smoothly at ±5% speed rather than
+              // leaving it (old behaviour) or jumping (a seek).
+              applyGuestDriftCorrection(player.currentPosition, adjustedPos)
             }
           } else {
 
@@ -903,6 +1022,7 @@ constructor(
 
           if (player.playWhenReady) {
             Timber.tag(TAG).d("Guest: Pausing playback")
+            setGuestPlaybackSpeed(1f)
             connection.pause()
           }
 
@@ -920,24 +1040,31 @@ constructor(
           val pos = action.position ?: 0L
           val now = System.currentTimeMillis()
 
-          if (now - lastSyncActionTime < SYNC_DEBOUNCE_THRESHOLD_MS) {
-            Timber.tag(TAG)
-              .d("Guest: SEEK debounced (only ${now - lastSyncActionTime}ms since last sync)")
-            return
-          }
+          // Never drop a seek: the old 1s debounce silently discarded host
+          // seeks that followed a play/track change, leaving the guest at
+          // the wrong position until the next heartbeat.
+          val adjustedPos =
+            syncClock.adjustedPositionMs(
+              positionMs = pos,
+              serverTimestampMs = action.serverTime,
+              isPlaying = player.playWhenReady,
+              localNowMs = now
+            )
 
-          if (kotlin.math.abs(player.currentPosition - pos) > POSITION_TOLERANCE_MS) {
+          if (kotlin.math.abs(player.currentPosition - adjustedPos) > POSITION_TOLERANCE_MS) {
             Timber.tag(TAG)
               .d(
-                "Guest: SEEK to $pos from ${player.currentPosition} (diff > ${POSITION_TOLERANCE_MS}ms)"
+                "Guest: SEEK to $adjustedPos from ${player.currentPosition} (diff > ${POSITION_TOLERANCE_MS}ms)"
               )
-            connection.seekTo(pos)
+            setGuestPlaybackSpeed(1f)
+            connection.seekTo(adjustedPos)
             lastSyncActionTime = now
           } else {
             Timber.tag(TAG).d("Guest: SEEK ignored (position diff < ${POSITION_TOLERANCE_MS}ms)")
           }
         }
         PlaybackActions.CHANGE_TRACK -> {
+          setGuestPlaybackSpeed(1f)
           action.trackInfo?.let { track ->
             Timber.tag(TAG)
               .d("Guest: CHANGE_TRACK to ${track.title}, queue size=${action.queue?.size}")
@@ -1094,11 +1221,12 @@ constructor(
   private fun handleSyncState(state: SyncStatePayload) {
     val now = System.currentTimeMillis()
     val adjustedPos =
-      if (state.isPlaying) {
-        state.position + kotlin.math.max(0L, now - state.lastUpdate)
-      } else {
-        state.position
-      }
+      syncClock.adjustedPositionMs(
+        positionMs = state.position,
+        serverTimestampMs = state.lastUpdate,
+        isPlaying = state.isPlaying,
+        localNowMs = now
+      )
 
     Timber.tag(TAG)
       .d(
@@ -1227,23 +1355,28 @@ constructor(
 
           Timber.tag(TAG).d("Bypass buffer: immediately applying play=$isPlaying at pos=$position")
 
+          val waitStartMs = System.currentTimeMillis()
           var attempts = 0
-          while (player.playbackState != Player.STATE_READY && attempts < 100) {
+          while (player.playbackState != Player.STATE_READY && attempts < 240) {
             delay(50)
             attempts++
           }
-          if (player.playbackState == Player.STATE_READY) {
-            Timber.tag(TAG).d("Player ready after ${attempts * 50}ms, seeking to $position")
-            player.seekTo(position)
-            if (isPlaying) {
-              connection.play()
-              Timber.tag(TAG).d("Bypass: PLAY issued")
-            } else {
-              connection.pause()
-              Timber.tag(TAG).d("Bypass: PAUSE issued")
-            }
+          if (player.playbackState != Player.STATE_READY) {
+            // Do not abandon the sync: ExoPlayer honours seek/play issued
+            // while buffering, so apply anyway instead of leaving the
+            // guest paused forever on a slow first frame.
+            Timber.tag(TAG).w("Player not ready after 12s during bypass sync; applying anyway")
+          }
+          // The host kept playing while we buffered; land where it is now.
+          val waitDriftMs =
+            if (isPlaying) System.currentTimeMillis() - waitStartMs else 0L
+          player.seekTo(position + waitDriftMs)
+          if (isPlaying) {
+            connection.play()
+            Timber.tag(TAG).d("Bypass: PLAY issued")
           } else {
-            Timber.tag(TAG).w("Player not ready after 5s timeout during bypass sync")
+            connection.pause()
+            Timber.tag(TAG).d("Bypass: PAUSE issued")
           }
 
           pendingSyncState = null
@@ -1261,6 +1394,7 @@ constructor(
             )
           applyPendingSyncIfReady()
           client.sendBufferReady(currentTrack.id)
+          scheduleBufferFallback(currentTrack.id)
         }
       } catch (e: Exception) {
         Timber.tag(TAG).e(e, "Error applying playback state")
@@ -1369,6 +1503,7 @@ constructor(
                 applyPendingSyncIfReady()
 
                 client.sendBufferReady(track.id)
+                scheduleBufferFallback(track.id)
                 Timber.tag(TAG)
                   .d(
                     "Sent buffer ready for ${track.id}, pending sync stored: pos=$position, play=$shouldPlay"
@@ -1615,7 +1750,7 @@ constructor(
     heartbeatJob =
       scope.launch {
         while (heartbeatJob?.isActive == true && isInRoom && isHost) {
-          delay(10000L)
+          delay(5000L)
           playerConnection?.player?.let { player ->
             if (player.playWhenReady && player.playbackState == Player.STATE_READY) {
               val pos = player.currentPosition
@@ -1625,7 +1760,7 @@ constructor(
           }
         }
       }
-    Timber.tag(TAG).d("Host heartbeat started (10s interval)")
+    Timber.tag(TAG).d("Host heartbeat started (5s interval)")
   }
 
   private fun stopHeartbeat() {
