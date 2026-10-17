@@ -148,7 +148,6 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
   companion object {
     private const val TAG = "ListenTogether"
     private val DEFAULT_SERVER_URL = ListenTogetherServers.defaultServerUrl
-    private const val MAX_RECONNECT_ATTEMPTS = 15
     private const val INITIAL_RECONNECT_DELAY_MS = 1000L
     private const val MAX_RECONNECT_DELAY_MS = 120000L
     private const val PING_INTERVAL_MS = 25000L
@@ -354,6 +353,9 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
 
   private val codec = MessageCodec(MessageFormat.JSON, false)
 
+  /** Set by [disconnect]: the one and only way a session ends on purpose. */
+  @Volatile private var userDisconnected = false
+
   @Volatile private var webSocket: WebSocket? = null
   private var pingJob: Job? = null
   private var pingSentTime: Long = 0L
@@ -427,6 +429,7 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
   }
 
   fun connect() {
+    userDisconnected = false
     if (
       _connectionState.value == ConnectionState.CONNECTED ||
         _connectionState.value == ConnectionState.CONNECTING
@@ -520,6 +523,7 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
   }
 
   fun disconnect() {
+    userDisconnected = true
     log(LogLevel.INFO, "Disconnecting from server")
     releaseWakeLock()
     pingJob?.cancel()
@@ -738,7 +742,13 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
       return
     }
 
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && shouldReconnect) {
+    if (shouldReconnect) {
+      // A Listen Together session ends only when the user leaves it —
+      // never because the network or the relay had a bad minute. Retry
+      // forever with capped backoff; the persisted session token lets the
+      // relay drop us straight back into the same room, and the manager
+      // resyncs playback on Reconnected. (The network observer also pokes
+      // us the moment connectivity returns.)
       reconnectAttempts++
       _connectionState.value = ConnectionState.RECONNECTING
 
@@ -748,49 +758,27 @@ class ListenTogetherClient @Inject constructor(private val context: Context) {
       log(
         LogLevel.INFO,
         "Attempting reconnect",
-        "Attempt $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS, waiting ${delaySeconds}s, reason: ${t.message}"
+        "Attempt $reconnectAttempts (no limit), waiting ${delaySeconds}s, reason: ${t.message}"
       )
 
       scope.launch {
-        _events.emit(ListenTogetherEvent.Reconnecting(reconnectAttempts, MAX_RECONNECT_ATTEMPTS))
+        _events.emit(ListenTogetherEvent.Reconnecting(reconnectAttempts, 0))
         delay(delayMs)
 
         if (
-          _connectionState.value == ConnectionState.RECONNECTING ||
-            _connectionState.value == ConnectionState.DISCONNECTED
+          !userDisconnected &&
+            (_connectionState.value == ConnectionState.RECONNECTING ||
+              _connectionState.value == ConnectionState.DISCONNECTED)
         ) {
           log(LogLevel.INFO, "Reconnecting after backoff", "Delay was ${delaySeconds}s")
           connect()
         }
       }
     } else {
-      _connectionState.value = ConnectionState.ERROR
-
-      if (sessionToken != null) {
-        log(
-          LogLevel.ERROR,
-          "Reconnection failed",
-          "Max attempts reached, but session preserved for manual reconnect"
-        )
-        scope.launch {
-          _events.emit(
-            ListenTogetherEvent.ConnectionError(
-              "Connection failed after $MAX_RECONNECT_ATTEMPTS attempts. ${t.message ?: "Unknown error"}"
-            )
-          )
-        }
-      } else {
-
-        sessionToken = null
-        storedRoomCode = null
-        storedUsername = null
-        _roomState.value = null
-        _role.value = RoomRole.NONE
-        clearPersistedSession()
-
-        scope.launch {
-          _events.emit(ListenTogetherEvent.ConnectionError(t.message ?: "Unknown error"))
-        }
+      // No session and no pending intent: nothing to preserve or retry for.
+      _connectionState.value = ConnectionState.DISCONNECTED
+      scope.launch {
+        _events.emit(ListenTogetherEvent.ConnectionError(t.message ?: "Unknown error"))
       }
     }
   }

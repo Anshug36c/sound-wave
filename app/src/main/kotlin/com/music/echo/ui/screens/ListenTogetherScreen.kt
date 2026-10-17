@@ -257,10 +257,6 @@ fun ListenTogetherScreen(navController: NavController, showTopBar: Boolean = fal
             roomCode = room.roomCode,
             rttMs = rttMs,
             isHost = isHost,
-            allowParticipantControl = room.allowParticipantControl,
-            onAllowParticipantControlChange = { enabled ->
-              listenTogetherManager.updateRoomSettings(enabled)
-            },
             context = context,
             navController = navController
           )
@@ -391,17 +387,6 @@ fun ListenTogetherScreen(navController: NavController, showTopBar: Boolean = fal
             }
           },
           onFieldFocused = { coroutineScope.launch { bringIntoViewRequester.bringIntoView() } }
-        )
-      }
-    }
-
-    if (isInRoom && isHost) {
-      item {
-        ParticipantControlCard(
-          allowParticipantControl = roomState?.allowParticipantControl == true,
-          onAllowParticipantControlChange = { enabled ->
-            listenTogetherManager.updateRoomSettings(enabled)
-          }
         )
       }
     }
@@ -653,8 +638,6 @@ private fun RoomStatusCard(
   roomCode: String,
   rttMs: Long = 0L,
   isHost: Boolean,
-  allowParticipantControl: Boolean,
-  onAllowParticipantControlChange: (Boolean) -> Unit,
   context: Context,
   navController: NavController
 ) {
@@ -687,8 +670,6 @@ private fun RoomStatusCard(
       Text(
         text =
           if (isHost) stringResource(R.string.listen_together_you_are_host)
-          else if (allowParticipantControl)
-            stringResource(R.string.listen_together_participant_control_enabled)
           else stringResource(R.string.listen_together_you_are_guest),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1312,32 +1293,6 @@ private fun SettingsLinkCard(onClick: () -> Unit) {
           title = { Text(stringResource(R.string.settings)) },
           description = { Text(stringResource(R.string.listen_together_settings_desc)) },
           onClick = onClick
-        )
-      )
-  )
-}
-
-@Composable
-private fun ParticipantControlCard(
-  allowParticipantControl: Boolean,
-  onAllowParticipantControlChange: (Boolean) -> Unit
-) {
-  Material3SettingsGroup(
-    items =
-      listOf(
-        Material3SettingsItem(
-          icon = painterResource(R.drawable.music_note),
-          title = { Text(stringResource(R.string.listen_together_allow_participant_control)) },
-          description = {
-            Text(stringResource(R.string.listen_together_allow_participant_control_desc))
-          },
-          trailingContent = {
-            Switch(
-              checked = allowParticipantControl,
-              onCheckedChange = onAllowParticipantControlChange
-            )
-          },
-          onClick = { onAllowParticipantControlChange(!allowParticipantControl) }
         )
       )
   )
